@@ -1,0 +1,18 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit secrets (keep example only)
+.streamlit/secrets.toml
+
+# Local runtime data
+data/
+*.csv
+*.db
+*.sqlite3
