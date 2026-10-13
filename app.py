@@ -472,11 +472,10 @@ with top_col3:
 st.divider()
 
 # แถบเมนูด้านบนแบบ Tabs (Active tab จะมีเส้นใต้ไฮไลต์เข้มเด่นชัด)
-tab_excel, tab_new_order, tab_step_log, tab_teams_test = st.tabs([
+tab_excel, tab_new_order, tab_step_log = st.tabs([
     "📊 ตารางคำสั่งงาน (Excel View)", 
     "➕ สร้างคำสั่งงานใหม่", 
-    "📝 บันทึกความคืบหน้ารายขั้นตอน", 
-    "🔔 ทดสอบการแจ้งเตือน Teams Group Chat"
+    "📝 บันทึกความคืบหน้ารายขั้นตอน"
 ])
 
 # ----------------- TAB 1: ตารางคำสั่งงานสไตล์ Excel (ตามภาพ 1) -----------------
@@ -767,85 +766,5 @@ with tab_step_log:
                         st.success("บันทึกความคืบหน้าเรียบร้อยแล้ว")
                         st.rerun()
 
-# ----------------- TAB 4: ทดสอบการแจ้งเตือน & คู่มือการขอ Webhook -----------------
-with tab_teams_test:
-    st.subheader("ทดสอบส่งการแจ้งเตือนเข้า Microsoft Teams Group Chat")
-    
-    # คำแนะนำและขั้นตอนการขอ Webhook ละเอียด
-    with st.expander("📖 วิธีการสร้าง Webhook URL จาก Microsoft Teams Group Chat และนำมาใส่ใน Secrets", expanded=True):
-        st.markdown("""
-        ### ขั้นตอนการขอ Webhook URL ใน Microsoft Teams
-        1. เปิดโปรแกรม **Microsoft Teams** บนคอมพิวเตอร์ของคุณ
-        2. ไปที่กลุ่มแชต (**Group Chat**) ที่ต้องการให้แจ้งเตือนเด้งเข้า
-        3. มองไปที่มุมบนขวาของหน้าต่างแชต คลิกที่ไอคอน **Workflows** (หรือคลิกจุดสามจุด `...` แล้วเลือก Workflows)
-        4. เลือกแท็บ **Create** แล้วค้นหาคำว่า:
-           `Post message in a chat when a webhook request is received`
-        5. คลิกที่การ์ดเทมเพลต ตั้งชื่อ Flow เช่น `Mission Control Bot` แล้วกด **Next**
-        6. ในช่อง **Chat** ให้เลือกเป็นกลุ่มแชตปัจจุบันของคุณ จากนั้นกด **Create Flow**
-        7. ระบบจะประมวลผลและสร้างลิงก์ **HTTP POST URL** ให้ทันที ให้คลิกปุ่ม **Copy**
-        
-        ---
-        
-        ### นำลิงก์ที่ได้ไปใส่ใน Streamlit App Secrets
-        - **เมื่อรันบนเครื่องคอมพิวเตอร์ (Local)**:
-          เปิดไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจกต์ แล้ววาง URL ในบรรทัด:
-          ```toml
-          [teams]
-          webhook_url = "https://prod-xx.southeastasia.logic.azure.com:443/workflows/xxxx/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xxxx"
-          ```
-        - **เมื่อ Deploy บน Streamlit Community Cloud**:
-          1. ไปที่หน้าแดชบอร์ด [share.streamlit.io](https://share.streamlit.io)
-          2. กดจุด 3 จุด `...` ข้างชื่อแอปของคุณ -> เลือก **Settings**
-          3. เลือกแท็บ **Secrets** ทางด้านซ้าย
-          4. วางบรรทัด `[teams]` และ `webhook_url = "..."` แล้วกด **Save**
-        """)
 
-    st.divider()
 
-    webhook_current = st.secrets.get("teams", {}).get("webhook_url", "")
-    if webhook_current:
-        st.success(f"ตรวจพบการตั้งค่า Teams Webhook URL แล้ว: `{webhook_current[:45]}...`")
-    else:
-        st.warning("ยังไม่มีการตั้งค่า `webhook_url` ใน secrets.toml (สามารถวาง URL ด้านล่างเพื่อทดสอบชั่วคราวได้)")
-        webhook_current = st.text_input("วาง Teams Webhook URL ชั่วคราวเพื่อทดสอบ")
-
-    if st.button("ส่งข้อความทดสอบเข้า Teams Group Chat ตอนนี้", type="primary", use_container_width=True):
-        if not webhook_current:
-            st.error("กรุณาระบุ Teams Webhook URL ก่อนกดทดสอบ")
-        else:
-            with st.spinner("กำลังส่งข้อความทดสอบ..."):
-                test_payload = {
-                    "type": "message",
-                    "attachments": [
-                        {
-                            "contentType": "application/vnd.microsoft.card.adaptive",
-                            "content": {
-                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                                "type": "AdaptiveCard",
-                                "version": "1.4",
-                                "body": [
-                                    {
-                                        "type": "TextBlock",
-                                        "text": "✅ ทดสอบการเชื่อมต่อระบบ Mission Control สำเร็จ!",
-                                        "weight": "Bolder",
-                                        "size": "Medium",
-                                        "color": "Good"
-                                    },
-                                    {
-                                        "type": "TextBlock",
-                                        "text": f"ส่งโดย: {my_display_name}\nระบบแจ้งเตือนเข้า Microsoft Teams Group Chat พร้อมใช้งานสำหรับคำสั่งงานจริงแล้ว",
-                                        "wrap": True
-                                    }
-                                ]
-                            }
-                        }
-                    ]
-                }
-                try:
-                    res = requests.post(webhook_current, json=test_payload, timeout=10)
-                    if res.status_code in [200, 202]:
-                        st.success("ส่งข้อความทดสอบเข้า Teams Group Chat เรียบร้อยแล้ว! ตรวจสอบในกลุ่มแชต Teams ได้ทันที")
-                    else:
-                        st.error(f"Teams ตอบกลับด้วยรหัส {res.status_code}: {res.text}")
-                except Exception as e:
-                    st.error(f"ไม่สามารถเชื่อมต่อได้: {str(e)}")
