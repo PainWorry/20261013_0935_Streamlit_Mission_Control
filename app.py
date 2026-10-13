@@ -1,18 +1,50 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 import os
 import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# กำหนดค่าหน้าจอ
+# กำหนดค่าหน้าจอและซ่อน Sidebar ทางซ้าย
 st.set_page_config(
     page_title="Mission Control - ระบบติดตามและยืนยันคำสั่งงาน",
     page_icon="📋",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# ซ่อนปุ่มเปิดปิด Sidebar ทางซ้ายเพื่อให้เป็น Top Navigation 100%
+st.markdown("""
+<style>
+    [data-testid="collapsedControl"] { display: none; }
+    section[data-testid="stSidebar"] { display: none; }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 20px;
+        font-weight: 600;
+        border-radius: 6px 6px 0px 0px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(255, 75, 75, 0.1);
+        border-bottom: 3px solid #ff4b4b !important;
+        color: #ff4b4b !important;
+    }
+    .pin-box {
+        font-size: 26px;
+        letter-spacing: 12px;
+        text-align: center;
+        background: #f0f2f6;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # โฟลเดอร์สำหรับเก็บข้อมูลกรณีทำงานในโหมด Offline / Local
 LOCAL_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -36,9 +68,8 @@ DEFAULT_USERS_ROSTER = [
     {"username": "imran.r", "title": "PM"},
 ]
 
-# ----------------- ฟังก์ชันส่งการแจ้งเตือนเข้า Microsoft Teams และ Email -----------------
+# ----------------- ฟังก์ชันส่งการแจ้งเตือน Microsoft Teams และ Email -----------------
 def send_teams_notification(order_id, title, creator, assignee, deadline, status, action_text):
-    """ส่งการแจ้งเตือนแบบ Adaptive Card เข้ากลุ่มแชต Microsoft Teams ผ่าน Power Automate Webhook"""
     webhook_url = st.secrets.get("teams", {}).get("webhook_url", "")
     if not webhook_url:
         return False, "ยังไม่ได้ตั้งค่า Teams Webhook URL ใน secrets.toml"
@@ -94,7 +125,6 @@ def send_teams_notification(order_id, title, creator, assignee, deadline, status
 
 
 def send_email_notification(order_id, title, creator, assignee, deadline, status, action_text):
-    """ส่งการแจ้งเตือนทาง Email (SMTP) สำหรับเป็นช่องทางสำรอง"""
     email_cfg = st.secrets.get("email", {})
     if not email_cfg.get("sender_email") or not email_cfg.get("sender_password"):
         return False, "ไม่ได้ตั้งค่า Email SMTP ใน secrets"
@@ -135,12 +165,12 @@ def send_email_notification(order_id, title, creator, assignee, deadline, status
     except Exception as e:
         return False, str(e)
 
-# ----------------- ระบบจัดการข้อมูล (Data Layer: GSheets + Local Fallback) -----------------
+# ----------------- ระบบจัดการฐานข้อมูล (Data Layer) -----------------
 EMPTY_USERS_COLS = ["username", "display_name", "pin", "must_change_pin", "updated_at"]
 EMPTY_ORDERS_COLS = [
-    "order_id", "created_at", "task_title", "description", 
-    "creator", "assignee", "recorded_by", "deadline", 
-    "creator_confirmed", "assignee_confirmed", "status"
+    "created_at", "task_title", "description", "deadline", 
+    "status", "assignee", "assignee_confirmed", "creator", 
+    "creator_confirmed", "recorded_by", "order_id"
 ]
 EMPTY_LOGS_COLS = ["log_id", "order_id", "timestamp", "author", "step_note"]
 
@@ -248,15 +278,15 @@ def save_logs_data(conn, logs_df):
     logs_df.to_csv(LOGS_CSV, index=False)
     return True
 
-# ----------------- โหลดข้อมูลระบบ -----------------
 conn, users_df, orders_df, logs_df, db_status = load_data()
-
-# รายชื่อ Display Name ทั้งหมดสำหรับ Dropdown (ชื่อ ตำแหน่ง)
 ALL_DISPLAY_NAMES = list(users_df["display_name"].unique())
 
-# ตรวจสอบ Session State ของการล็อกอิน (คงสถานะตลอดการเปิดเบราว์เซอร์)
+# ----------------- จัดการ Session State -----------------
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
+
+if "keypad_pin" not in st.session_state:
+    st.session_state.keypad_pin = ""
 
 if "pending_change_pin_user" not in st.session_state:
     st.session_state.pending_change_pin_user = None
@@ -264,7 +294,7 @@ if "pending_change_pin_user" not in st.session_state:
 if "show_forgot_password" not in st.session_state:
     st.session_state.show_forgot_password = False
 
-# ----------------- หน้าจอบังคับเปลี่ยนรหัสผ่านครั้งแรก (First-time PIN Change) -----------------
+# ----------------- หน้าจอบังคับเปลี่ยนรหัสผ่านครั้งแรก -----------------
 if st.session_state.pending_change_pin_user:
     st.title("ตั้งรหัสผ่านใหม่ (กำหนดรหัส PIN 6 หลักของตนเอง)")
     p_user = st.session_state.pending_change_pin_user
@@ -292,58 +322,107 @@ if st.session_state.pending_change_pin_user:
 
                 st.session_state.auth_user = users_df.loc[u_idx].to_dict()
                 st.session_state.pending_change_pin_user = None
+                st.session_state.keypad_pin = ""
                 st.success("ตั้งรหัส PIN สำเร็จ เข้าสู่ระบบเรียบร้อย")
                 st.rerun()
 
     if st.button("ยกเลิกและกลับหน้าเข้าสู่ระบบ"):
         st.session_state.pending_change_pin_user = None
+        st.session_state.keypad_pin = ""
         st.rerun()
     st.stop()
 
-# ----------------- หน้าจอเข้าสู่ระบบ (Login Screen) -----------------
+# ----------------- หน้าจอเข้าสู่ระบบ: แป้นตัวเลขมือถือ (On-screen 10-Key Keypad 0-9) -----------------
 if not st.session_state.auth_user:
     st.title("Mission Control : ระบบติดตามและยืนยันคำสั่งงาน")
-    st.subheader("เข้าสู่ระบบ (Login)")
-    st.caption("ระบบเก็บประวัติการทำงานแบบรายบุคคล กรุณาเข้าสู่ระบบด้วย Username และรหัส PIN 6 หลัก")
+    st.caption("ระบบเก็บประวัติการทำงานแบบรายบุคคล กรุณาเข้าสู่ระบบด้วย Username และกดรหัส PIN 6 หลักผ่านแป้นบนหน้าจอ")
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        entered_username = st.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="herren.k")
-        entered_pin = st.text_input("รหัส PIN 6 หลัก", type="password", max_chars=6, placeholder="••••••")
+    col_login, col_help = st.columns([1, 1])
+
+    with col_login:
+        entered_username = st.text_input("ชื่อผู้ใช้งาน (Username)", placeholder="herren.k", key="login_user_input")
         
-        login_btn = st.button("เข้าสู่ระบบ", use_container_width=True)
+        # จุดแสดงสถานะรหัสผ่านสไตล์มือถือ
+        cur_pin = st.session_state.keypad_pin
+        pin_dots = " ".join(["●" if i < len(cur_pin) else "○" for i in range(6)])
+        st.markdown(f"<div class='pin-box'>{pin_dots}</div>", unsafe_allow_html=True)
+        st.caption("กดปุ่มตัวเลข 0-9 บนหน้าจอด้านล่าง (ไม่อนุญาตให้พิมพ์ผ่านคีย์บอร์ด):")
+
+        # แป้นตัวเลข 10 ปุ่มสไตล์มือถือ (0-9)
+        k_row1 = st.columns(3)
+        for i, val in enumerate(["1", "2", "3"]):
+            if k_row1[i].button(val, key=f"pad_{val}", use_container_width=True):
+                if len(st.session_state.keypad_pin) < 6:
+                    st.session_state.keypad_pin += val
+                    st.rerun()
+
+        k_row2 = st.columns(3)
+        for i, val in enumerate(["4", "5", "6"]):
+            if k_row2[i].button(val, key=f"pad_{val}", use_container_width=True):
+                if len(st.session_state.keypad_pin) < 6:
+                    st.session_state.keypad_pin += val
+                    st.rerun()
+
+        k_row3 = st.columns(3)
+        for i, val in enumerate(["7", "8", "9"]):
+            if k_row3[i].button(val, key=f"pad_{val}", use_container_width=True):
+                if len(st.session_state.keypad_pin) < 6:
+                    st.session_state.keypad_pin += val
+                    st.rerun()
+
+        k_row4 = st.columns(3)
+        if k_row4[0].button("ล้างค่า", key="pad_clear", use_container_width=True):
+            st.session_state.keypad_pin = ""
+            st.rerun()
+
+        if k_row4[1].button("0", key="pad_0", use_container_width=True):
+            if len(st.session_state.keypad_pin) < 6:
+                st.session_state.keypad_pin += "0"
+                st.rerun()
+
+        if k_row4[2].button("⌫ ลบ", key="pad_backspace", use_container_width=True):
+            if len(st.session_state.keypad_pin) > 0:
+                st.session_state.keypad_pin = st.session_state.keypad_pin[:-1]
+                st.rerun()
+
+        st.write("")
+        login_btn = st.button("เข้าสู่ระบบ (Login)", type="primary", use_container_width=True)
         if login_btn:
             u_clean = entered_username.strip().lower()
             matching_user = users_df[users_df["username"] == u_clean]
             
             if matching_user.empty:
                 st.error("ไม่พบชื่อผู้ใช้งานนี้ในระบบ โปรดตรวจสอบตัวสะกด (เช่น herren.k, nataphon.p)")
+            elif len(st.session_state.keypad_pin) != 6:
+                st.error("กรุณากดรหัส PIN ให้ครบ 6 หลัก")
             else:
                 user_row = matching_user.iloc[0]
                 stored_pin = str(user_row["pin"])
                 must_change = str(user_row["must_change_pin"]).lower() == "true"
                 
-                if entered_pin == stored_pin:
-                    if entered_pin == "111111" or must_change:
+                if st.session_state.keypad_pin == stored_pin:
+                    if st.session_state.keypad_pin == "111111" or must_change:
                         st.session_state.pending_change_pin_user = user_row.to_dict()
                         st.rerun()
                     else:
                         st.session_state.auth_user = user_row.to_dict()
+                        st.session_state.keypad_pin = ""
                         st.success(f"เข้าสู่ระบบสำเร็จ: ยินดีต้อนรับคุณ {user_row['display_name']}")
                         st.rerun()
                 else:
                     st.error("รหัส PIN 6 หลักไม่ถูกต้อง")
+                    st.session_state.keypad_pin = ""
 
         st.divider()
-        if st.button("ลืมรหัสผ่าน (Forgot Password)"):
+        if st.button("ลืมรหัสผ่าน (Forgot Password)", use_container_width=True):
             st.session_state.show_forgot_password = not st.session_state.show_forgot_password
 
-    # หน้าต่างรีเซ็ตรหัสผ่าน (Secret Reset Workflow)
+    # หน้าต่างรีเซ็ตรหัสผ่าน KuromiBlackCat
     if st.session_state.show_forgot_password:
-        with col2:
-            st.warning("⚠️ ขั้นตอนขอรีเซ็ตรหัสผ่าน")
+        with col_help:
+            st.warning("ขั้นตอนขอรีเซ็ตรหัสผ่าน")
             admin_contact = st.secrets.get("security", {}).get("admin_contact", "Herren@Onelink.co.th")
-            st.markdown(f"1. โปรดติดต่อ Teams: **`{admin_contact}`** เพื่อยืนยันตัวตนจริง<br>2. เจ้าหน้าที่จะให้รหัสยืนยันพิเศษเพื่อนำมากรอกในช่องด้านล่าง", unsafe_allow_html=True)
+            st.markdown(f"1. โปรดติดต่อ Teams: **`{admin_contact}`** เพื่อยืนยันตัวตนจริง<br>2. คุณจะได้รับรหัสยืนยันพิเศษเพื่อนำมากรอกด้านล่าง", unsafe_allow_html=True)
             
             with st.form("forgot_pw_form"):
                 reset_user_choice = st.selectbox("เลือกบัญชีของคุณ", options=ALL_DISPLAY_NAMES)
@@ -372,229 +451,291 @@ if not st.session_state.auth_user:
                             st.session_state.show_forgot_password = False
     st.stop()
 
-# ----------------- แถบเมนูด้านข้าง (Sidebar) -----------------
+# ----------------- ส่วนหัวหน้าเว็บแบบ Top Navigation (ไม่มี Sidebar) -----------------
 current_user = st.session_state.auth_user
 my_display_name = current_user["display_name"]
 
-with st.sidebar:
-    st.title("Mission Control")
-    st.write(f"ผู้ใช้งาน: **{my_display_name}**")
-    st.caption(f"สถานะฐานข้อมูล: `{db_status}`")
-    
+# แถบ Header แสดงข้อมูลผู้ใช้และปุ่ม Logout
+top_col1, top_col2, top_col3 = st.columns([3, 2, 1])
+with top_col1:
+    st.markdown(f"### 📋 Mission Control")
+with top_col2:
+    st.markdown(f"👤 ผู้ใช้งาน: **{my_display_name}** | 🟢 `{db_status}`")
+with top_col3:
     if st.button("ออกจากระบบ (Logout)", use_container_width=True):
         st.session_state.auth_user = None
         st.session_state.pending_change_pin_user = None
+        st.session_state.keypad_pin = ""
         st.session_state.show_forgot_password = False
         st.rerun()
+
+st.divider()
+
+# แถบเมนูด้านบนแบบ Tabs (Active tab จะมีเส้นใต้ไฮไลต์เข้มเด่นชัด)
+tab_excel, tab_new_order, tab_step_log, tab_teams_test = st.tabs([
+    "📊 ตารางคำสั่งงาน (Excel View)", 
+    "➕ สร้างคำสั่งงานใหม่", 
+    "📝 บันทึกความคืบหน้ารายขั้นตอน", 
+    "🔔 ทดสอบการแจ้งเตือน Teams Group Chat"
+])
+
+# ----------------- TAB 1: ตารางคำสั่งงานสไตล์ Excel (ตามภาพ 1) -----------------
+with tab_excel:
+    st.subheader("กระดานติดตามงาน (Excel View)")
     
-    st.divider()
-    menu = st.radio("เมนูหลัก", [
-        "กระดานติดตามงาน (Mission Control)",
-        "สร้างคำสั่งงานใหม่",
-        "บันทึกความคืบหน้ารายขั้นตอน",
-        "ทดสอบการแจ้งเตือน (Teams Group Chat)"
-    ])
+    # ตัวควบคุมมุมมอง: สลับ "แบบย่อ" กับ "แบบเต็ม"
+    v_col1, v_col2, v_col3, v_col4 = st.columns([2, 2, 2, 2])
+    with v_col1:
+        view_mode = st.radio("โหมดการแสดงผล:", ["แบบย่อ", "แบบเต็ม"], horizontal=True)
+    with v_col2:
+        sort_order = st.selectbox("เรียงตามวันที่สร้าง:", ["ล่าสุดก่อน (ใหม่ -> เก่า)", "เก่าสุดก่อน (เก่า -> ใหม่)"])
+    with v_col3:
+        filter_assignee = st.selectbox("กรองตามคนรับผิดชอบ:", ["ทั้งหมด"] + ALL_DISPLAY_NAMES)
+    with v_col4:
+        filter_status = st.selectbox("กรองตามสถานะ:", ["ทั้งหมด (ยกเว้นที่ยกเลิก)", "งานที่ยังไม่เสร็จสิ้น", "เสร็จสิ้น", "ทั้งหมดรวมยกเลิก"])
 
-# ----------------- เมนู 1: กระดานติดตามงาน (Mission Control Dashboard) -----------------
-if menu == "กระดานติดตามงาน (Mission Control)":
-    st.title("กระดานติดตามงาน (Mission Control Dashboard)")
-    st.caption(f"ยินดีต้อนรับคุณ **{my_display_name}** | ติดตามสถานะงานและดำเนินการยืนยันแบบสองทาง (Dual-Confirmation)")
-
-    # ตัวกรองงาน 4 มุมมอง (Personalized 4-View Filters)
-    filter_tab = st.radio(
-        "มุมมองรายการงาน:",
-        ["งานทั้งหมด", "งานที่ฉันต้องทำ (Assignee)", "งานที่ฉันสั่ง (Creator)", "งานที่รอฉันยืนยัน (Pending Approval)"],
-        horizontal=True
-    )
-
-    if orders_df.empty:
-        st.info("ยังไม่มีรายการคำสั่งงานในระบบ กดที่เมนู 'สร้างคำสั่งงานใหม่' เพื่อเริ่มบันทึก")
+    # กรองข้อมูล
+    active_df = orders_df.copy()
+    if active_df.empty:
+        st.info("ยังไม่มีรายการคำสั่งงานในระบบ กดที่แท็บ 'สร้างคำสั่งงานใหม่' เพื่อเริ่มบันทึก")
     else:
-        # กรองข้อมูลตามแถบมุมมอง
-        if filter_tab == "งานที่ฉันต้องทำ (Assignee)":
-            filtered_df = orders_df[orders_df["assignee"] == my_display_name]
-        elif filter_tab == "งานที่ฉันสั่ง (Creator)":
-            filtered_df = orders_df[orders_df["creator"] == my_display_name]
-        elif filter_tab == "งานที่รอฉันยืนยัน (Pending Approval)":
-            # งานที่รอฉันยืนยัน: ฉันเป็น creator และ creator_confirmed ยังรอยืนยัน หรือ ฉันเป็น assignee และ assignee_confirmed ยังรอยืนยัน หรือ งานรอตรวจสอบที่ฉันเป็น creator
-            is_creator_pending = (orders_df["creator"] == my_display_name) & (orders_df["creator_confirmed"].str.contains("รอยืนยัน", na=False))
-            is_assignee_pending = (orders_df["assignee"] == my_display_name) & (orders_df["assignee_confirmed"].str.contains("รอยืนยัน", na=False))
-            is_creator_review_pending = (orders_df["creator"] == my_display_name) & (orders_df["status"] == "รอตรวจสอบ")
-            filtered_df = orders_df[is_creator_pending | is_assignee_pending | is_creator_review_pending]
+        # กรองสถานะ
+        if filter_status == "ทั้งหมด (ยกเว้นที่ยกเลิก)":
+            active_df = active_df[active_df["status"] != "ยกเลิก"]
+        elif filter_status == "งานที่ยังไม่เสร็จสิ้น":
+            active_df = active_df[~active_df["status"].isin(["เสร็จสิ้น", "ยกเลิก"])]
+        elif filter_status == "เสร็จสิ้น":
+            active_df = active_df[active_df["status"] == "เสร็จสิ้น"]
+
+        # กรองคนรับผิดชอบ
+        if filter_assignee != "ทั้งหมด":
+            active_df = active_df[active_df["assignee"] == filter_assignee]
+
+        # จัดเรียงตามวันที่
+        ascending = (sort_order == "เก่าสุดก่อน (เก่า -> ใหม่)")
+        active_df = active_df.sort_values(by="created_at", ascending=ascending)
+
+        # จัดรูปแบบคอลัมน์ตามภาพ 1
+        if view_mode == "แบบย่อ":
+            display_cols = ["created_at", "task_title", "description", "deadline", "assignee", "status"]
+            rename_map = {
+                "created_at": "สร้างเมื่อ",
+                "task_title": "ชื่องาน",
+                "description": "รายละเอียด",
+                "deadline": "กำหนดส่ง",
+                "assignee": "คนรับผิดชอบ",
+                "status": "สถานะปัจจุบัน"
+            }
         else:
-            filtered_df = orders_df
+            # แบบเต็ม ตามภาพ 1 เป๊ะ
+            display_cols = [
+                "created_at", "task_title", "description", "deadline", 
+                "status", "assignee", "assignee_confirmed", "creator", 
+                "creator_confirmed", "recorded_by"
+            ]
+            rename_map = {
+                "created_at": "สร้างเมื่อ",
+                "task_title": "ชื่องาน",
+                "description": "รายละเอียด",
+                "deadline": "กำหนดส่ง",
+                "status": "สถานะปัจจุบัน",
+                "assignee": "คนรับผิดชอบ",
+                "assignee_confirmed": "คนรับผิดชอบยืนยัน",
+                "creator": "คนสั่ง",
+                "creator_confirmed": "คนสั่งยืนยัน",
+                "recorded_by": "ผู้ลงบันทึก"
+            }
 
-        st.caption(f"แสดงรายการงานจำนวน {len(filtered_df)} รายการ")
+        # แสดงตารางสไตล์ Excel
+        render_df = active_df[display_cols].rename(columns=rename_map)
+        st.dataframe(render_df, use_container_width=True, hide_index=True)
 
-        if filtered_df.empty:
-            st.info(f"ไม่พบรายการงานในหมวด '{filter_tab}'")
-        else:
-            for idx, row in filtered_df.iloc[::-1].iterrows():
-                badge_status = str(row['status'])
-                header_title = f"[{badge_status}] {row['order_id']} : {row['task_title']} | กำหนดส่ง: {row['deadline']}"
-                
-                with st.expander(header_title, expanded=(badge_status != "เสร็จสิ้น")):
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        st.write(f"**คนสั่ง:** {row['creator']}")
-                        st.write(f"**การยืนยันคนสั่ง:** {row['creator_confirmed']}")
-                    with col_info2:
-                        st.write(f"**คนรับผิดชอบ:** {row['assignee']}")
-                        st.write(f"**การยืนยันคนรับผิดชอบ:** {row['assignee_confirmed']}")
-                    with col_info3:
-                        st.write(f"**สถานะปัจจุบัน:** {row['status']}")
-                        recorded_by_val = row.get('recorded_by', row['creator'])
-                        st.write(f"**ผู้ลงบันทึก:** {recorded_by_val}")
-                        st.write(f"**สร้างเมื่อ:** {row['created_at']}")
-                    
-                    st.write("**รายละเอียดงานและเงื่อนไข:**")
-                    st.info(str(row['description']))
-                    
-                    # ประวัติความคืบหน้ารายขั้นตอน (Step Logs)
-                    item_logs = logs_df[logs_df["order_id"] == str(row["order_id"])]
-                    if not item_logs.empty:
-                        st.write("**ประวัติความคืบหน้า (Step Logs):**")
-                        for _, lrow in item_logs.iterrows():
-                            st.caption(f"• `[{lrow['timestamp']}]` โดย **{lrow['author']}**: {lrow['step_note']}")
-                    
-                    st.divider()
-                    
-                    # โซนปุ่มดำเนินการยืนยันงาน (Personalized Dual-Confirmation Actions)
-                    btn_col1, btn_col2, btn_col3 = st.columns(3)
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    
-                    # 1. คนสั่งกดยืนยันคำสั่งงาน (กรณีเป็นคนสั่งจริงที่ล็อกอินอยู่)
-                    if my_display_name == row['creator'] and "รอยืนยัน" in str(row['creator_confirmed']):
-                        with btn_col1:
-                            if st.button("คนสั่งยืนยันความถูกต้องคำสั่งงาน", key=f"creator_conf_{row['order_id']}", use_container_width=True):
-                                orders_df.loc[idx, "creator_confirmed"] = f"ยืนยันแล้ว ({now_str})"
-                                if "ยืนยันแล้ว" in str(orders_df.loc[idx, "assignee_confirmed"]):
-                                    orders_df.loc[idx, "status"] = "กำลังดำเนินการ"
-                                save_orders_data(conn, orders_df)
-                                send_teams_notification(row['order_id'], row['task_title'], row['creator'], row['assignee'], row['deadline'], orders_df.loc[idx, "status"], f"{my_display_name} ยืนยันคำสั่งงานแล้ว")
-                                st.success("บันทึกการยืนยันของคนสั่งสำเร็จ")
-                                st.rerun()
+        st.divider()
 
-                    # 2. คนรับผิดชอบตอบรับคำสั่งงาน (กรณีเป็นคนรับผิดชอบจริงที่ล็อกอินอยู่)
-                    if my_display_name == row['assignee'] and "รอยืนยัน" in str(row['assignee_confirmed']):
-                        with btn_col2:
-                            if st.button("คนรับผิดชอบตอบรับคำสั่งงานนี้", key=f"assignee_conf_{row['order_id']}", use_container_width=True):
-                                orders_df.loc[idx, "assignee_confirmed"] = f"ยืนยันแล้ว ({now_str})"
-                                if "ยืนยันแล้ว" in str(orders_df.loc[idx, "creator_confirmed"]):
-                                    orders_df.loc[idx, "status"] = "กำลังดำเนินการ"
-                                save_orders_data(conn, orders_df)
-                                send_teams_notification(row['order_id'], row['task_title'], row['creator'], row['assignee'], row['deadline'], orders_df.loc[idx, "status"], f"{my_display_name} ตอบรับคำสั่งงานแล้ว")
-                                st.success("บันทึกการตอบรับงานสำเร็จ")
-                                st.rerun()
+        # แผงดำเนินการคำสั่งงาน (Action & Audit Panel ด้านล่างตาราง)
+        st.subheader("แผงดำเนินการคำสั่งงาน (Action Panel)")
+        if not active_df.empty:
+            order_choices = [f"{r['order_id']} | {r['task_title']} ({r['status']})" for _, r in active_df.iterrows()]
+            selected_choice = st.selectbox("เลือกคำสั่งงานเพื่อดำเนินการ / ดูประวัติขั้นตอน:", order_choices)
+            selected_order_id = selected_choice.split(" | ")[0]
+            selected_row = orders_df[orders_df["order_id"] == selected_order_id].iloc[0]
+            row_idx = orders_df[orders_df["order_id"] == selected_order_id].index[0]
 
-                    # 3. คนรับผิดชอบส่งงานเพื่อขอตรวจสอบ (Assignee submits task)
-                    if my_display_name == row['assignee'] and row['status'] == "กำลังดำเนินการ":
-                        with btn_col2:
-                            if st.button("ส่งงาน (ขอตรวจสอบความเรียบร้อย)", key=f"submit_task_{row['order_id']}", use_container_width=True):
-                                orders_df.loc[idx, "status"] = "รอตรวจสอบ"
-                                save_orders_data(conn, orders_df)
-                                send_teams_notification(row['order_id'], row['task_title'], row['creator'], row['assignee'], row['deadline'], "รอตรวจสอบ", f"{my_display_name} ส่งมอบงานแล้ว กรุณาตรวจสอบ")
-                                st.success("ส่งมอบงานเรียบร้อย รอคนสั่งตรวจสอบ")
-                                st.rerun()
+            det_col1, det_col2, det_col3 = st.columns(3)
+            with det_col1:
+                st.write(f"**ชื่องาน:** {selected_row['task_title']}")
+                st.write(f"**คนสั่ง:** {selected_row['creator']} ({selected_row['creator_confirmed']})")
+            with det_col2:
+                st.write(f"**กำหนดส่ง:** {selected_row['deadline']}")
+                st.write(f"**คนรับผิดชอบ:** {selected_row['assignee']} ({selected_row['assignee_confirmed']})")
+            with det_col3:
+                st.write(f"**สถานะ:** `{selected_row['status']}`")
+                st.write(f"**ผู้ลงบันทึก:** {selected_row['recorded_by']}")
 
-                    # 4. เฉพาะคนสั่งเท่านั้นที่มีสิทธิ์ตรวจรับและปิดงาน (Creator closes order)
-                    if my_display_name == row['creator'] and row['status'] in ["รอตรวจสอบ", "กำลังดำเนินการ"]:
-                        with btn_col3:
-                            if st.button("ตรวจรับและปิดงาน (เสร็จสิ้น)", key=f"close_order_{row['order_id']}", use_container_width=True):
-                                orders_df.loc[idx, "status"] = "เสร็จสิ้น"
-                                save_orders_data(conn, orders_df)
-                                send_teams_notification(row['order_id'], row['task_title'], row['creator'], row['assignee'], row['deadline'], "เสร็จสิ้น", f"{my_display_name} ตรวจรับและปิดงานเรียบร้อยแล้ว")
-                                st.success("ปิดงานเรียบร้อย")
-                                st.rerun()
+            st.info(f"**รายละเอียดงาน:** {selected_row['description']}")
 
-# ----------------- เมนู 2: สร้างคำสั่งงานใหม่ -----------------
-elif menu == "สร้างคำสั่งงานใหม่":
-    st.title("บันทึกคำสั่งงานใหม่")
+            # ประวัติความคืบหน้ารายขั้นตอน
+            item_logs = logs_df[logs_df["order_id"] == selected_order_id]
+            if not item_logs.empty:
+                st.write("**ประวัติความคืบหน้ารายขั้นตอน (Step Logs):**")
+                for _, lrow in item_logs.iterrows():
+                    st.caption(f"• `[{lrow['timestamp']}]` โดย **{lrow['author']}**: {lrow['step_note']}")
+
+            # โซนปุ่มดำเนินการ
+            act_col1, act_col2, act_col3, act_col4 = st.columns(4)
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+            # 1. คนสั่งกดยืนยันคำสั่งงาน
+            if my_display_name == selected_row['creator'] and "รอยืนยัน" in str(selected_row['creator_confirmed']):
+                with act_col1:
+                    if st.button("คนสั่งยืนยันความถูกต้อง", key=f"btn_cconf_{selected_order_id}", type="primary", use_container_width=True):
+                        orders_df.loc[row_idx, "creator_confirmed"] = f"ยืนยันแล้ว ({now_str})"
+                        if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "assignee_confirmed"]):
+                            orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ยืนยันคำสั่งงานแล้ว")
+                        st.success("ยืนยันคำสั่งงานเรียบร้อย")
+                        st.rerun()
+
+            # 2. คนรับผิดชอบตอบรับคำสั่งงาน
+            if my_display_name == selected_row['assignee'] and "รอยืนยัน" in str(selected_row['assignee_confirmed']):
+                with act_col2:
+                    if st.button("คนรับผิดชอบตอบรับงาน", key=f"btn_aconf_{selected_order_id}", type="primary", use_container_width=True):
+                        orders_df.loc[row_idx, "assignee_confirmed"] = f"ยืนยันแล้ว ({now_str})"
+                        if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "creator_confirmed"]):
+                            orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ตอบรับคำสั่งงานแล้ว")
+                        st.success("ตอบรับงานเรียบร้อย")
+                        st.rerun()
+
+            # 3. คนรับผิดชอบส่งงานเพื่อขอตรวจสอบ
+            if my_display_name == selected_row['assignee'] and selected_row['status'] == "กำลังดำเนินการ":
+                with act_col2:
+                    if st.button("ส่งงาน (ขอตรวจสอบ)", key=f"btn_sub_{selected_order_id}", use_container_width=True):
+                        orders_df.loc[row_idx, "status"] = "รอตรวจสอบ"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], "รอตรวจสอบ", f"{my_display_name} ส่งมอบงานแล้ว กรุณาตรวจสอบ")
+                        st.success("ส่งมอบงานเรียบร้อย รอคนสั่งตรวจสอบ")
+                        st.rerun()
+
+            # 4. เฉพาะคนสั่งตรวจรับและปิดงาน
+            if my_display_name == selected_row['creator'] and selected_row['status'] in ["รอตรวจสอบ", "กำลังดำเนินการ"]:
+                with act_col3:
+                    if st.button("ตรวจรับและปิดงาน (เสร็จสิ้น)", key=f"btn_close_{selected_order_id}", use_container_width=True):
+                        orders_df.loc[row_idx, "status"] = "เสร็จสิ้น"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], "เสร็จสิ้น", f"{my_display_name} ตรวจรับและปิดงานเรียบร้อยแล้ว")
+                        st.success("ปิดงานเรียบร้อย")
+                        st.rerun()
+
+            # 5. เฉพาะคนสั่งมีสิทธิ์ลบ/ยกเลิกงาน (Soft Delete)
+            if my_display_name == selected_row['creator'] and selected_row['status'] != "ยกเลิก":
+                with act_col4:
+                    if st.button("ยกเลิกคำสั่งงาน (ลบงาน)", key=f"btn_del_{selected_order_id}", use_container_width=True):
+                        orders_df.loc[row_idx, "status"] = "ยกเลิก"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], "ยกเลิก", f"{my_display_name} ได้ยกเลิกคำสั่งงานนี้แล้ว")
+                        st.warning("ยกเลิกคำสั่งงานเรียบร้อยแล้ว (สถานะเปลี่ยนเป็น 'ยกเลิก' และซ่อนออกจากมุมมองปกติ)")
+                        st.rerun()
+
+# ----------------- TAB 2: สร้างคำสั่งงานใหม่ (Date Picker + Time Default 10:00) -----------------
+with tab_new_order:
+    st.subheader("บันทึกคำสั่งงานใหม่")
     st.caption("สามารถสร้างงานโดยตนเอง หรือจดบันทึกจากคำสั่งปากเปล่าแทนเพื่อนร่วมทีมได้ ระบบจะระบุชื่อผู้ลงบันทึกจริงเพื่อความโปร่งใส")
 
     with st.form("new_order_form"):
-        task_title = st.text_input("ชื่องาน / สรุปประเด็นคำสั่ง", placeholder="เช่น ปรับปรุง Cloud Security, ตรวจสอบ Network Switches")
-        description = st.text_area("รายละเอียดงานทั้งหมด", placeholder="ระบุขอบเขตงาน รายละเอียดสำคัญ เงื่อนไข หรือข้อตกลงที่ระบุไว้")
-        
-        c1, c2, c3 = st.columns(3)
+        task_title = st.text_input("ชื่องาน / สรุปประเด็นคำสั่ง", placeholder="เช่น ขอรายละเอียด server ที่ดูแลทั้งหมด, ปรับปรุง Cloud Security")
+        description = st.text_area("รายละเอียดงานทั้งหมด", placeholder="เช่น ขอสิทธิ์ read only access เพื่อ maintain ระบบ")
+
+        c1, c2 = st.columns(2)
         with c1:
             creator_default_idx = ALL_DISPLAY_NAMES.index(my_display_name) if my_display_name in ALL_DISPLAY_NAMES else 0
             selected_creator = st.selectbox("คนสั่ง (Creator)", options=ALL_DISPLAY_NAMES, index=creator_default_idx)
         with c2:
             selected_assignee = st.selectbox("คนรับผิดชอบ (Assignee)", options=ALL_DISPLAY_NAMES, index=0)
-        with c3:
-            deadline = st.text_input("กำหนดส่ง (Deadline)", placeholder="เช่น 2026-10-16 17:00")
-            
+
+        # Date Picker + Time Default 10:00 ตามข้อกำหนด
+        cd_col1, cd_col2 = st.columns(2)
+        with cd_col1:
+            due_date = st.date_input("กำหนดส่ง (วันที่)", value=date.today() + timedelta(days=2))
+        with cd_col2:
+            due_time = st.time_input("กำหนดส่ง (เวลา)", value=time(10, 0))
+
+        formatted_deadline = f"{due_date.strftime('%Y%m%d')} {due_time.strftime('%H:%M')}"
+        st.caption(f"กำหนดส่งที่จะถูกบันทึก: `{formatted_deadline}`")
+
         notify_channel = st.multiselect("ส่งการแจ้งเตือนทันทีไปยัง", ["Microsoft Teams (Chat Group)", "Email"], default=["Microsoft Teams (Chat Group)"])
-        
-        submitted = st.form_submit_button("บันทึกคำสั่งงาน", use_container_width=True)
+
+        submitted = st.form_submit_button("บันทึกคำสั่งงาน", type="primary", use_container_width=True)
         if submitted:
             if not task_title or not description:
                 st.error("กรุณาระบุชื่องานและรายละเอียดงานให้ครบถ้วน")
             else:
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
                 order_id = f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                
+
                 # กำหนดสถานะยืนยันตามตัวตนของผู้บันทึก
                 if my_display_name == selected_creator:
                     creator_conf = f"ยืนยันแล้ว ({now_str})"
-                    assignee_conf = "รอยืนยัน (รอคนรับผิดชอบตอบรับ)"
+                    assignee_conf = f"รอยืนยัน (รอ {selected_assignee} ตอบรับ)"
                     init_status = "รอคนรับผิดชอบตอบรับ"
                 else:
-                    # ผู้บันทึกพิมพ์แทนคนสั่ง (เช่น จดจากคำสั่งปากเปล่า)
-                    creator_conf = f"รอยืนยัน (รอ {selected_creator} ตรวจสอบ)"
+                    # ผู้บันทึกพิมพ์แทนคนสั่ง (จดจากคำสั่งปากเปล่า)
+                    creator_conf = f"รอยืนยัน (รอ {selected_creator} ยืนยัน)"
                     assignee_conf = f"ยืนยันแล้ว ({now_str})" if my_display_name == selected_assignee else "รอยืนยัน"
                     init_status = "รอคนสั่งยืนยัน"
-                
+
                 new_row = pd.DataFrame([{
-                    "order_id": order_id,
                     "created_at": now_str,
                     "task_title": task_title,
                     "description": description,
-                    "creator": selected_creator,
+                    "deadline": formatted_deadline,
+                    "status": init_status,
                     "assignee": selected_assignee,
-                    "recorded_by": my_display_name,
-                    "deadline": deadline,
-                    "creator_confirmed": creator_conf,
                     "assignee_confirmed": assignee_conf,
-                    "status": init_status
+                    "creator": selected_creator,
+                    "creator_confirmed": creator_conf,
+                    "recorded_by": my_display_name,
+                    "order_id": order_id
                 }])
-                
+
                 updated_orders = pd.concat([orders_df, new_row], ignore_index=True)
                 save_orders_data(conn, updated_orders)
-                
-                # ส่งการแจ้งเตือน
+
+                # ส่งแจ้งเตือน
                 action_msg = f"มีคำสั่งงานใหม่: {selected_creator} สั่งให้ {selected_assignee} รับผิดชอบ"
                 if "Microsoft Teams (Chat Group)" in notify_channel:
-                    send_teams_notification(order_id, task_title, selected_creator, selected_assignee, deadline, init_status, action_msg)
+                    send_teams_notification(order_id, task_title, selected_creator, selected_assignee, formatted_deadline, init_status, action_msg)
                 if "Email" in notify_channel:
-                    send_email_notification(order_id, task_title, selected_creator, selected_assignee, deadline, init_status, action_msg)
-                
-                st.success(f"บันทึกคำสั่งงานรหัส {order_id} สำเร็จ พร้อมส่งการแจ้งเตือนเรียบร้อยแล้ว")
+                    send_email_notification(order_id, task_title, selected_creator, selected_assignee, formatted_deadline, init_status, action_msg)
 
-# ----------------- เมนู 3: บันทึกความคืบหน้ารายขั้นตอน -----------------
-elif menu == "บันทึกความคืบหน้ารายขั้นตอน":
-    st.title("บันทึกความคืบหน้าแต่ละขั้นตอน (Step Note)")
+                st.success(f"บันทึกคำสั่งงานรหัส {order_id} สำเร็จ พร้อมส่งการแจ้งเตือนเรียบร้อยแล้ว")
+                st.rerun()
+
+# ----------------- TAB 3: บันทึกความคืบหน้ารายขั้นตอน -----------------
+with tab_step_log:
+    st.subheader("บันทึกความคืบหน้าแต่ละขั้นตอน (Step Note)")
     st.caption("เก็บบันทึกประวัติการทำงาน (Audit Trail) รายขั้นตอน ระบุผู้บันทึกและเวลาอัตโนมัติ")
 
     if orders_df.empty:
         st.info("ยังไม่มีงานในระบบ")
     else:
-        active_orders = orders_df[orders_df["status"] != "เสร็จสิ้น"]
+        active_orders = orders_df[~orders_df["status"].isin(["เสร็จสิ้น", "ยกเลิก"])]
         if active_orders.empty:
-            st.info("ไม่มีงานที่กำลังดำเนินการอยู่ (ทุกงานปิดเสร็จสิ้นแล้ว)")
+            st.info("ไม่มีงานที่กำลังดำเนินการอยู่ (ทุกงานเสร็จสิ้นหรือยกเลิกแล้ว)")
         else:
             selected_order_display = st.selectbox(
                 "เลือกรายการงานที่ต้องการบันทึกความคืบหน้า",
                 options=active_orders["order_id"] + " : " + active_orders["task_title"]
             )
             selected_order_id = selected_order_display.split(" : ")[0]
-            
+
             with st.form("step_log_form"):
                 note_text = st.text_area("รายละเอียดความคืบหน้าในขั้นตอนนี้", placeholder="เช่น ดำเนินการตรวจสอบ Policy เสร็จแล้ว อยู่ระหว่างจัดทำสรุปรายงาน")
                 notify_teams_on_step = st.checkbox("ส่งสรุปความคืบหน้านี้เข้า Teams Chat Group ด้วย", value=True)
-                
-                log_submitted = st.form_submit_button("บันทึกขั้นตอน", use_container_width=True)
+
+                log_submitted = st.form_submit_button("บันทึกขั้นตอน", type="primary", use_container_width=True)
                 if log_submitted:
                     if not note_text:
                         st.error("กรุณาระบุรายละเอียดความคืบหน้า")
@@ -607,10 +748,10 @@ elif menu == "บันทึกความคืบหน้ารายขั
                             "author": my_display_name,
                             "step_note": note_text
                         }])
-                        
+
                         updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
                         save_logs_data(conn, updated_logs)
-                        
+
                         if notify_teams_on_step:
                             order_row = orders_df[orders_df["order_id"] == selected_order_id].iloc[0]
                             send_teams_notification(
@@ -622,14 +763,44 @@ elif menu == "บันทึกความคืบหน้ารายขั
                                 order_row["status"], 
                                 f"อัปเดตความคืบหน้าโดย {my_display_name}: {note_text}"
                             )
-                        
+
                         st.success("บันทึกความคืบหน้าเรียบร้อยแล้ว")
                         st.rerun()
 
-# ----------------- เมนู 4: ทดสอบการแจ้งเตือน (Teams Group Chat) -----------------
-elif menu == "ทดสอบการแจ้งเตือน (Teams Group Chat)":
-    st.title("ทดสอบส่งการแจ้งเตือนเข้า Microsoft Teams Group Chat")
-    st.caption("ตรวจสอบว่า Webhook URL จาก Power Automate รับส่งข้อมูลเข้ากลุ่มแชตถูกต้องหรือไม่")
+# ----------------- TAB 4: ทดสอบการแจ้งเตือน & คู่มือการขอ Webhook -----------------
+with tab_teams_test:
+    st.subheader("ทดสอบส่งการแจ้งเตือนเข้า Microsoft Teams Group Chat")
+    
+    # คำแนะนำและขั้นตอนการขอ Webhook ละเอียด
+    with st.expander("📖 วิธีการสร้าง Webhook URL จาก Microsoft Teams Group Chat และนำมาใส่ใน Secrets", expanded=True):
+        st.markdown("""
+        ### ขั้นตอนการขอ Webhook URL ใน Microsoft Teams
+        1. เปิดโปรแกรม **Microsoft Teams** บนคอมพิวเตอร์ของคุณ
+        2. ไปที่กลุ่มแชต (**Group Chat**) ที่ต้องการให้แจ้งเตือนเด้งเข้า
+        3. มองไปที่มุมบนขวาของหน้าต่างแชต คลิกที่ไอคอน **Workflows** (หรือคลิกจุดสามจุด `...` แล้วเลือก Workflows)
+        4. เลือกแท็บ **Create** แล้วค้นหาคำว่า:
+           `Post message in a chat when a webhook request is received`
+        5. คลิกที่การ์ดเทมเพลต ตั้งชื่อ Flow เช่น `Mission Control Bot` แล้วกด **Next**
+        6. ในช่อง **Chat** ให้เลือกเป็นกลุ่มแชตปัจจุบันของคุณ จากนั้นกด **Create Flow**
+        7. ระบบจะประมวลผลและสร้างลิงก์ **HTTP POST URL** ให้ทันที ให้คลิกปุ่ม **Copy**
+        
+        ---
+        
+        ### นำลิงก์ที่ได้ไปใส่ใน Streamlit App Secrets
+        - **เมื่อรันบนเครื่องคอมพิวเตอร์ (Local)**:
+          เปิดไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจกต์ แล้ววาง URL ในบรรทัด:
+          ```toml
+          [teams]
+          webhook_url = "https://prod-xx.southeastasia.logic.azure.com:443/workflows/xxxx/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xxxx"
+          ```
+        - **เมื่อ Deploy บน Streamlit Community Cloud**:
+          1. ไปที่หน้าแดชบอร์ด [share.streamlit.io](https://share.streamlit.io)
+          2. กดจุด 3 จุด `...` ข้างชื่อแอปของคุณ -> เลือก **Settings**
+          3. เลือกแท็บ **Secrets** ทางด้านซ้าย
+          4. วางบรรทัด `[teams]` และ `webhook_url = "..."` แล้วกด **Save**
+        """)
+
+    st.divider()
 
     webhook_current = st.secrets.get("teams", {}).get("webhook_url", "")
     if webhook_current:
@@ -638,7 +809,7 @@ elif menu == "ทดสอบการแจ้งเตือน (Teams Group C
         st.warning("ยังไม่มีการตั้งค่า `webhook_url` ใน secrets.toml (สามารถวาง URL ด้านล่างเพื่อทดสอบชั่วคราวได้)")
         webhook_current = st.text_input("วาง Teams Webhook URL ชั่วคราวเพื่อทดสอบ")
 
-    if st.button("ส่งข้อความทดสอบเข้า Teams Group Chat", use_container_width=True):
+    if st.button("ส่งข้อความทดสอบเข้า Teams Group Chat ตอนนี้", type="primary", use_container_width=True):
         if not webhook_current:
             st.error("กรุณาระบุ Teams Webhook URL ก่อนกดทดสอบ")
         else:
@@ -662,7 +833,7 @@ elif menu == "ทดสอบการแจ้งเตือน (Teams Group C
                                     },
                                     {
                                         "type": "TextBlock",
-                                        "text": f"ส่งโดยผู้ใช้งาน: {my_display_name}\nระบบแจ้งเตือนเข้า Microsoft Teams Chat Group ทำงานสมบูรณ์แบบแล้ว",
+                                        "text": f"ส่งโดย: {my_display_name}\nระบบแจ้งเตือนเข้า Microsoft Teams Group Chat พร้อมใช้งานสำหรับคำสั่งงานจริงแล้ว",
                                         "wrap": True
                                     }
                                 ]
