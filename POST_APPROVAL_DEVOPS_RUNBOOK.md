@@ -1,134 +1,156 @@
-# Post-Approval FAANG DevOps Execution & Rollout Runbook
-## Mission Control V2: Granular Step-by-Step Implementation Guide
+# 🛠️ Post-Approval FAANG DevOps & SRE Operations Runbook
 
-> **Document Classification**: Lead AI & Principal DevOps Technical Runbook  
-> **Associated Architecture Plan**: [MISSION_CONTROL_V2_TECHNICAL_ARCHITECTURE_PLAN.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/MISSION_CONTROL_V2_TECHNICAL_ARCHITECTURE_PLAN.md)  
-> **Repository Path**: `/home/herrenk/User/20261013_0935_Streamlit_Mission_Control`  
-> **Target Python Environment**: Python 3.10+ / Streamlit 1.35+
+> **Document Class**: Level-3 SRE Engineering Runbook & Disaster Recovery Playbook  
+> **Target Audience**: DevOps Engineers, Site Reliability Engineers (SRE), Cloud Operations, System Administrators  
+> **System**: Streamlit Mission Control (ระบบติดตามและยืนยันคำสั่งงาน)  
+> **Cloud Provider**: AWS Asia Pacific (Bangkok) `ap-southeast-7`  
+> **Infrastructure as Code**: Terraform HCL (Declarative)  
+> **Runtime Environment**: Ubuntu 24.04 LTS Noble + Docker Engine + Nginx Reverse Proxy  
 
 ---
 
-## 1. Operational Pre-requisites & Local Environment Setup
+## 1. Environment & Infrastructure Inventory
 
-### 1.1 Local Workspace Verification
-1. เปิด Terminal และตรวจสอบว่าโฟลเดอร์โปรเจกต์อยู่ที่:
-   ```bash
-   cd /home/herrenk/User/20261013_0935_Streamlit_Mission_Control
-   ```
-2. ตรวจสอบเวอร์ชันของ Git และ GitHub CLI:
-   ```bash
-   git status
-   gh auth status
-   ```
+| Resource Type | Resource Name / ID | Configuration / Specs | Access Endpoint / Identifier |
+| :--- | :--- | :--- | :--- |
+| **AWS Region** | `ap-southeast-7` | Bangkok, Thailand (Local Zone / Region) | Subnet AZ 7a (`subnet-09f1fdfb18ee69a7c`) |
+| **EC2 Instance** | `mission-control-server` | `t3.micro` (2 vCPU, 1 GiB RAM, 20 GB gp3) | `i-05be016f15cf61e82` |
+| **Static IPv4 (EIP)** | `mission-control-eip` | Elastic Static Public IP | `43.211.85.163` |
+| **Security Group** | `mission-control-sg-web` | Inbound: 80, 443, 8501, 22 (All CIDR 0.0.0.0/0) | `sg-0b8e2cc17fa8c03bf` |
+| **SSH Key Pair** | `mission_control_bkk_key.pem` | RSA 4096-bit OpenSSH | Stored securely in `terraform/` (chmod 400) |
+| **Public Web URL** | Production Domain / IP | Nginx Port 80 (Auto-upgraded WebSockets) | **[http://43.211.85.163](http://43.211.85.163)** |
+| **Direct Streamlit URL** | Internal / Debug Port | Streamlit Port 8501 | [http://43.211.85.163:8501](http://43.211.85.163:8501) |
 
-### 1.2 Python Virtual Environment (.venv) Initialization
-สร้างและเปิดใช้งาน Virtual Environment ในเครื่อง Local:
+---
+
+## 2. Granular Host Access & SSH Procedures
+
+### 2.1 SSH Bastion & Host Connection
+From your administrative terminal inside the repository's `terraform/` directory:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+# 1. Ensure private key permissions are locked down
+chmod 400 mission_control_bkk_key.pem
+
+# 2. Connect directly to the Bangkok EC2 host
+ssh -i ./mission_control_bkk_key.pem ubuntu@43.211.85.163
 ```
 
 ---
 
-## 2. Phase 1 Implementation: Stabilization & Authentication Overhaul
+## 3. Container Management & Health Monitoring
 
-### 2.1 กำจัด On-Screen Virtual Numpad (Code Refactoring in `app.py`)
-1. **ลบ Session State ที่ไม่จำเป็น**:
-   - นำ `st.session_state.keypad_pin` ออก
-2. **แทนที่ UI Keypad ด้วย Clean Text Box**:
-   - ใช้ `st.text_input("รหัส PIN 6 หลัก", type="password", max_chars=6, key="login_pin_input")`
-   - รองรับการกดปุ่ม Enter หรือคลิกปุ่ม "เข้าสู่ระบบ (Login)" ได้ทันที โดยไม่มีการ Refresh หน้าจอซ้ำซ้อน
+The application runs under Docker Compose in `/opt/mission_control` with two decoupled services:
+1. `mission_control_web`: Streamlit Python 3.12 application container.
+2. `mission_control_nginx`: Nginx edge reverse proxy with WebSocket support.
 
-### 2.2 การปรับโครงสร้างผู้ใช้: Dual-Tab Gateway (Staff + Guest Portal)
-1. **ออกแบบหน้า Login เป็น 2 Tabs**:
-   - `tab_staff, tab_guest = st.tabs(["🔑 เข้าสู่ระบบ (เจ้าหน้าที่ / ทีมงาน)", "✉️ ผู้ประสานงานชั่วคราว (Guest)"])`
-2. **Tab 1: บัญชีเจ้าหน้าที่ / ทีมงาน (Staff & Team Members)**:
-   - ช่องกรอก `username` (Placeholder / Gray text: `name.s`)
-   - ช่องกรอก `pin` แบบ `st.text_input("รหัส PIN 6 หลัก", type="password")`
-   - ตรวจสอบสิทธิ์ Admin / Team Member เพื่อให้ผู้ดูแลระบบและสมาชิกสามารถกระจายงานให้รายชื่อสมาชิกในทีมได้ครบถ้วน
-3. **Tab 2: Guest / Temporary User Gateway Form**:
-   - ฟิลด์ที่บังคับกรอก:
-     - `guest_email`: อีเมลสำหรับติดต่อและส่งแจ้งเตือนกลับ (Regex Validation: `r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"`)
-     - `guest_name`: ชื่อและหน่วยงานของผู้ประสานงาน
-   - บันทึกค่าลงใน Session State:
-     ```python
-     st.session_state.auth_user = {
-         "username": f"guest_{guest_email.split('@')[0]}",
-         "display_name": f"{guest_name} (Guest: {guest_email})",
-         "role": "guest",
-         "email": guest_email
-     }
-     ```
-   - กำหนดสิทธิ์: สร้างงานใหม่ได้ และบันทึก Step Log ได้เฉพาะงานของตนเอง
-
-### 2.3 การปรับแต่ง Data Contract ใน `orders.csv` / Google Sheets
-1. ตรวจสอบคอลัมน์มาตรฐาน:
-   - `created_at`
-   - `task_title`
-   - `description`
-   - `deadline`
-   - `status`
-   - `assignee`
-   - `assignee_confirmed`
-   - `creator`
-   - `creator_confirmed`
-   - `recorded_by` (จะเก็บชื่อ Herren หรือ Guest Email ตามจริง)
-   - `order_id`
-
----
-
-## 3. Phase 2 Implementation: Interactive Task Navigation
-
-### 3.1 การอัปเกรด `st.dataframe` เป็น Interactive Selection Mode & Auto Tab Routing
-1. **Dynamic Tab Controller ผ่าน Session State**:
-   - ใช้ `st.session_state.active_tab_index` เพื่อสลับแท็บอัตโนมัติ
-2. **เปิดใช้งาน row selection ใน Tab 1 (Excel View)**:
-   ```python
-   selection = st.dataframe(
-       render_df,
-       use_container_width=True,
-       hide_index=True,
-       on_select="rerun",
-       selection_mode="single-row"
-   )
-   ```
-3. **ตรวจจับการคลิกแถวแล้วเด้งไป Tab 3 ทันที**:
-   ```python
-   selected_rows = selection.selection.rows
-   if selected_rows:
-       selected_idx = selected_rows[0]
-       target_order_id = active_df.iloc[selected_idx]["order_id"]
-       st.session_state.selected_order_for_step = target_order_id
-       st.session_state.active_tab = "📝 บันทึกความคืบหน้ารายขั้นตอน"
-       st.rerun()
-   ```
-   - เมื่อสลับไป Tab 3 ตัวฟอร์มบันทึกความคืบหน้าจะเลือกงานนั้นไว้ล่วงหน้า พร้อมให้พิมพ์ความคืบหน้าและเปลี่ยนสถานะได้ทันที
-
----
-
-## 4. Quality Assurance, SRE Testing & Verification Suite
-
-### 4.1 Test Matrix Checklist
-| Test Case ID | รายละเอียดการทดสอบ | ผลลัพธ์ที่คาดหวัง | Pass / Fail |
-| :--- | :--- | :--- | :---: |
-| **TC-01** | ล็อกอินด้วยบัญชี Herren ผ่าน Text Input PIN | ล็อกอินสำเร็จ เข้าสู่หน้า Mission Control ใน <1 วินาที | [ ] |
-| **TC-02** | ล็อกอินด้วยรหัส PIN ไม่ถูกต้อง | แสดงข้อความเตือน รหัสไม่ผ่าน ไม่เกิดบั๊กค้าง | [ ] |
-| **TC-03** | เข้าใช้งานแบบ Guest โดยกรอก Email ไม่ถูกต้อง | แสดง Validation Error แจ้งให้ระบุ Email ที่ถูกต้อง | [ ] |
-| **TC-04** | เข้าใช้งานแบบ Guest และบันทึกคำสั่งงานใหม่ | งานถูกสร้างในตาราง พร้อมบันทึก Email ใน recorded_by | [ ] |
-| **TC-05** | ส่ง Teams Webhook แจ้งเตือน | ข้อความเด้งเข้า Teams Group Chat พร้อมรายละเอียดครบถ้วน | [ ] |
-| **TC-06** | (Phase 2) คลิกแถวในตารางคำสั่งงาน | ระบบไฮไลต์งาน และเปิดฟอร์มอัปเดตสถานะงานนั้นทันที | [ ] |
-
----
-
-## 5. Deployment & Git Release Automation
-
-เมื่อทำการทดสอบในเครื่อง Local เรียบร้อย:
+### 3.1 Inspect Container Health & Status
 ```bash
-cd /home/herrenk/User/20261013_0935_Streamlit_Mission_Control
-git add app.py README.md MISSION_CONTROL_V2_TECHNICAL_ARCHITECTURE_PLAN.md POST_APPROVAL_DEVOPS_RUNBOOK.md
-git commit -m "feat: upgrade Mission Control v2 (text pin, herren-centric, guest gateway, faang proposal)"
-git push origin main
+cd /opt/mission_control
+sudo docker compose ps
 ```
-*ระบบ Streamlit Community Cloud จะทำการตรวจจับ Commit ใหม่และ Deploy อัตโนมัติภายใน 30 วินาที*
+*Expected Output:*
+```text
+NAME                     IMAGE                                COMMAND                  SERVICE     CREATED         STATUS                   PORTS
+mission_control_nginx    nginx:alpine                         "/docker-entrypoint.…"   nginx       1 minute ago    Up 1 minute (healthy)    0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+mission_control_web      20261013_0935_streamlit_mission_c…   "streamlit run app.p…"   app         1 minute ago    Up 1 minute (healthy)    0.0.0.0:8501->8501/tcp
+```
+
+### 3.2 Tail Live Container Logs
+```bash
+# Tail Streamlit application logs (tracebacks, user actions, Teams webhooks)
+sudo docker compose logs -f app
+
+# Tail Nginx reverse proxy access and error logs (HTTP requests, status codes)
+sudo docker compose logs -f nginx
+```
+
+### 3.3 Restart Services
+```bash
+# Graceful restart of both services
+sudo docker compose restart
+
+# Full recreate if configurations changed
+sudo docker compose down
+sudo docker compose up -d --build
+```
+
+---
+
+## 4. Persistent Storage Architecture & Backup Runbook
+
+Data is persisted on the host machine at `/opt/mission_control/data/` and volume-mounted into the container at `/app/data/`:
+- `data/orders.csv`: Primary database of all active and historical tasks.
+- `data/users.csv`: Personnel registry, roles, and PIN hashes.
+- `data/order_logs.csv`: SRE audit trail of all status transitions and timestamped step notes.
+
+### 4.1 On-Demand Backup Snapshot
+To create an instantaneous off-instance backup archive:
+
+```bash
+# On local workstation
+ssh -i ./terraform/mission_control_bkk_key.pem ubuntu@43.211.85.163 \
+  "sudo tar -czvf /tmp/mission_control_backup_\$(date +%Y%m%d_%H%M%S).tar.gz -C /opt/mission_control/data ."
+
+# Download backup archive to local machine
+scp -i ./terraform/mission_control_bkk_key.pem ubuntu@43.211.85.163:/tmp/mission_control_backup_*.tar.gz ./backups/
+```
+
+### 4.2 Automated Nightly Cron Backup
+To schedule automated nightly backups on the EC2 host:
+```bash
+# Add to root crontab on EC2
+sudo crontab -e
+# Add line:
+0 3 * * * tar -czvf /opt/backups/data_$(date +\%Y\%m\%d).tar.gz -C /opt/mission_control/data . && find /opt/backups -type f -mtime +14 -delete
+```
+
+---
+
+## 5. Zero-Downtime Continuous Deployment (Rolling Updates)
+
+Whenever new features, bug fixes, or UI changes are merged to GitHub:
+
+```bash
+# Execute on EC2 host:
+cd /opt/mission_control
+sudo git pull origin main
+sudo docker compose up -d --build
+```
+Docker will rebuild the Streamlit container layer and swap the container in under 3 seconds without dropping the Nginx reverse proxy listener.
+
+---
+
+## 6. SRE Disaster Recovery & Rollback Procedures
+
+### 6.1 Container Failure / Crash Loop
+If Streamlit encounters a fatal memory error or corrupt CSV:
+1. Check logs: `sudo docker compose logs --tail=100 app`
+2. If `orders.csv` is malformed, restore from latest snapshot:
+   ```bash
+   sudo cp /opt/mission_control/data/orders.csv.bak /opt/mission_control/data/orders.csv
+   sudo docker compose restart app
+   ```
+
+### 6.2 Full Server Disaster Reconstruction (RTO < 5 Minutes)
+If the EC2 virtual machine is terminated or suffers hardware failure:
+1. Navigate to the local repository `terraform/` directory.
+2. Execute:
+   ```bash
+   terraform apply -auto-approve
+   ```
+3. Terraform will provision a brand new Ubuntu EC2 instance, re-attach the static Elastic IP (`43.211.85.163`), bootstrap Docker, and launch the application automatically.
+4. Restore `data/` from your latest offsite backup archive.
+
+---
+
+## 7. Controlled Decommissioning & Teardown SLA
+
+If the infrastructure needs to be decommissioned to stop AWS billing:
+
+```bash
+# From local terraform directory
+cd terraform/
+terraform destroy -auto-approve
+```
+*SLA*: All 6 AWS resources (EC2, Elastic IP, Security Group, SSH Key Pair, EBS storage) will be cleanly released in under 60 seconds, reducing AWS burn rate to **$0.00**.
