@@ -157,6 +157,8 @@ receiver_email = ""
 ## 7. เอกสารวิศวกรรมมาตรฐาน FAANG ในโปรเจกต์
 
 | ชื่อเอกสาร | ระดับผู้ใช้งาน | วัตถุประสงค์และเนื้อหาสำคัญ |
+| :--- | :---: | :--- |
+| **[MISSION_CONTROL_ENTERPRISE_PLAYBOOK_TH_EN.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/docs/MISSION_CONTROL_ENTERPRISE_PLAYBOOK_TH_EN.md)** | All Users / Engineers / Management | **Bilingual Master Playbook (ไทย/EN)**: วัตถุประสงค์, เครื่องมือ (Tools), โครงสร้างสถาปัตยกรรม, ผลลัพธ์, วิธีใช้งานทุกขั้นตอน, และประวัติแก้ปัญหา INC-001 ถึง 012 |
 | **[MISSION_CONTROL_EXECUTIVE_WALKTHROUGH.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/docs/MISSION_CONTROL_EXECUTIVE_WALKTHROUGH.md)** | All Users / C-Suite | **Executive Visual Walkthrough**: ภาพหน้าจอจริงแสดงขั้นตอนการล็อกอิน PIN, ตารางงาน, การส่งออก Excel 1-คลิก, และแผงคำสั่งงาน |
 | **[DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md)** | AI Agent / Senior Eng | **Zero-Code AI Rebuild Standard**: Data Contracts, Golden Vectors, Problem-Fix Log 001-012, และ Junior Mentoring |
 | **[AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md)** | CEO / CTO / C-Suite | แผนสถาปัตยกรรมคลาวด์, การเปรียบเทียบ Region (Bangkok 96/100), FinOps 3-Tier Overrun Buffer |
