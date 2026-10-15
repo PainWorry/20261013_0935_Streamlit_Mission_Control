@@ -20,6 +20,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-006** | 2026-10-16 02:26 | **P0 (Critical)** | Session Termination | Clicking Logout in Incognito failed to log out due to server-side auto-restore race condition. | Added `is_logged_out` guard, client-side `history.replaceState` URL stripping, and cookie expiration. | 🟢 Resolved |
 | **INC-20261016-007** | 2026-10-16 02:58 | **P1 (High)** | Action Panel / Confirmation | Verbal order recorded on behalf of Creator (`รอคนสั่งยืนยัน`) lacked confirm button due to rigid `"รอยืนยัน"` check. | Expanded status check to `["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]` + added role-aware & Admin fallback confirmation. | 🟢 Resolved |
 | **INC-20261016-008** | 2026-10-16 03:25 | **P2 (Medium)** | Teams Webhook / Scalability | Static notification routing required changing Webhook keys whenever new members (e.g. Adam) onboarded. | Engineered Smart Counterparty Routing (`recipient_email`) for dynamic 1-on-1 Teams chat with zero key changes. | 🟢 Resolved |
+| **INC-20261016-009** | 2026-10-16 03:48 | **P2 (Medium)** | Export to Excel UX | Excel export was hidden behind Streamlit hover icon and lacked native `.xlsx` generation support. | Installed `openpyxl`, pinned `requirements.txt`, and added 1-click `.xlsx` & UTF-8-BOM `.csv` download buttons. | 🟢 Resolved |
 
 ---
 
@@ -252,3 +253,24 @@ If a Power Automate workflow hardcoded a single chat target (e.g. `Nataphon P.`)
 - **Smart Counterparty Routing**: Evaluates current active actor against ticket creator and assignee.
 - **Dynamic Payload Attributes**: Explicitly injects `recipient_email`, `recipient_name`, `creator_email`, and `assignee_email` at the root JSON payload, allowing Power Automate to use `Create a chat` with `recipient_email` without hardcoding conversation IDs.
 - **Single Perpetual Webhook**: Guarantees zero secret/key modifications across team growth.
+
+---
+
+### Incident ID: INC-20261016-009
+* **Date & Local Time**: 2026-10-16 03:48:00 (+07:00)
+* **Severity**: P2 (Feature Gap Remediation)
+* **Impacted Module**: `app.py::render_live_task_grid()`
+
+#### 1. Symptom & Executive Impact
+Users navigating to Tab 1 (Excel View) expected a direct 1-click "Export to Excel" capability. However, the interface only offered a raw dataframe (`st.dataframe`) and Streamlit's hidden top-right hover download icon, and the Python environment lacked `openpyxl` for binary `.xlsx` compilation.
+
+#### 2. Technical Root Cause (RCA)
+1. **Hidden Download UI**: Streamlit's native dataframe download button is only revealed upon mouse hover, causing users to believe no export functionality existed.
+2. **Missing Excel Engine**: Python environment lacked `openpyxl`, preventing `df.to_excel()` from executing.
+
+#### 3. Architectural Remediation & Code Diff
+- **Engine Dependency**: Installed `openpyxl` and updated `requirements.txt`.
+- **In-Memory Streaming**: Implemented `generate_excel_bytes()` using `io.BytesIO()` and `openpyxl`.
+- **Explicit 1-Click Buttons**: Added dual download buttons directly under the table:
+  - `📥 ดาวน์โหลดไฟล์ Excel (.xlsx)` (application/vnd.openxmlformats)
+  - `📄 ดาวน์โหลดไฟล์ CSV (.csv รองรับภาษาไทย)` (UTF-8-SIG with BOM to prevent Thai font corruption in Windows Excel).

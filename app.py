@@ -10,6 +10,13 @@ import hmac
 import hashlib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import io
+
+def generate_excel_bytes(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Orders')
+    return output.getvalue()
 
 # กำหนดค่าหน้าจอและซ่อน Sidebar ทางซ้าย
 st.set_page_config(
@@ -1204,6 +1211,30 @@ with tab_excel:
                 }
             render_df = active_df[d_cols].rename(columns=r_map)
             st.dataframe(render_df, use_container_width=True, hide_index=True)
+
+            dl_c1, dl_c2 = st.columns(2)
+            with dl_c1:
+                try:
+                    excel_bytes = generate_excel_bytes(render_df)
+                    st.download_button(
+                        label="📥 ดาวน์โหลดไฟล์ Excel (.xlsx)",
+                        data=excel_bytes,
+                        file_name=f"mission_control_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        type="primary"
+                    )
+                except Exception as ex:
+                    st.warning(f"ไม่สามารถแปลงเป็นไฟล์ .xlsx ได้: {ex}")
+            with dl_c2:
+                csv_bytes = render_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📄 ดาวน์โหลดไฟล์ CSV (.csv รองรับภาษาไทย)",
+                    data=csv_bytes,
+                    file_name=f"mission_control_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
 
     render_live_task_grid(filter_status, filter_assignee, sort_order, view_mode)
 
