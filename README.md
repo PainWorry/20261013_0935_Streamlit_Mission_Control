@@ -157,8 +157,8 @@ receiver_email = ""
 ## 7. เอกสารวิศวกรรมมาตรฐาน FAANG ในโปรเจกต์
 
 | ชื่อเอกสาร | ระดับผู้ใช้งาน | วัตถุประสงค์และเนื้อหาสำคัญ |
-| :--- | :---: | :--- |
-| **[DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md)** | AI Agent / Senior Eng | **Zero-Code AI Rebuild Standard**: Data Contracts, Golden Vectors, Problem-Fix Log 001-010, และ Junior Mentoring |
+| **[MISSION_CONTROL_EXECUTIVE_WALKTHROUGH.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/docs/MISSION_CONTROL_EXECUTIVE_WALKTHROUGH.md)** | All Users / C-Suite | **Executive Visual Walkthrough**: ภาพหน้าจอจริงแสดงขั้นตอนการล็อกอิน PIN, ตารางงาน, การส่งออก Excel 1-คลิก, และแผงคำสั่งงาน |
+| **[DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md)** | AI Agent / Senior Eng | **Zero-Code AI Rebuild Standard**: Data Contracts, Golden Vectors, Problem-Fix Log 001-012, และ Junior Mentoring |
 | **[AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md)** | CEO / CTO / C-Suite | แผนสถาปัตยกรรมคลาวด์, การเปรียบเทียบ Region (Bangkok 96/100), FinOps 3-Tier Overrun Buffer |
 | **[POST_APPROVAL_DEVOPS_RUNBOOK.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/POST_APPROVAL_DEVOPS_RUNBOOK.md)** | SRE / DevOps | คู่มือปฏิบัติการเซิร์ฟเวอร์, การเชื่อมต่อ SSH, การสำรองข้อมูล CSV, และ Disaster Recovery Runbook |
-| **[CHANGELOG.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/CHANGELOG.md)** | Lead / Auditor | บันทึกประวัติการแก้ปัญหาทั้งหมด (INC-001 ถึง INC-010) ตามมาตรฐาน FAANG Hybrid Two-Tier Standard |
+| **[CHANGELOG.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/CHANGELOG.md)** | Lead / Auditor | บันทึกประวัติการแก้ปัญหาทั้งหมด (INC-001 ถึง INC-012) ตามมาตรฐาน FAANG Hybrid Two-Tier Standard |
