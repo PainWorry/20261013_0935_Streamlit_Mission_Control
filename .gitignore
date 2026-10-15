@@ -16,3 +16,11 @@ data/
 *.csv
 *.db
 *.sqlite3
+
+# Terraform local state and secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.binary
+*.pem

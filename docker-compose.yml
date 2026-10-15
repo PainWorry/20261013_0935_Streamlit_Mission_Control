@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  streamlit:
+    build: .
+    container_name: mission_control_app
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./.streamlit:/app/.streamlit
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    expose:
+      - "8501"
+    networks:
+      - mission_network
+
+  nginx:
+    image: nginx:alpine
+    container_name: mission_control_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - streamlit
+    networks:
+      - mission_network
+
+networks:
+  mission_network:
+    driver: bridge

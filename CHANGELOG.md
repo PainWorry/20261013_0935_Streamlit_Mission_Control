@@ -21,6 +21,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-007** | 2026-10-16 02:58 | **P1 (High)** | Action Panel / Confirmation | Verbal order recorded on behalf of Creator (`รอคนสั่งยืนยัน`) lacked confirm button due to rigid `"รอยืนยัน"` check. | Expanded status check to `["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]` + added role-aware & Admin fallback confirmation. | 🟢 Resolved |
 | **INC-20261016-008** | 2026-10-16 03:25 | **P2 (Medium)** | Teams Webhook / Scalability | Static notification routing required changing Webhook keys whenever new members (e.g. Adam) onboarded. | Engineered Smart Counterparty Routing (`recipient_email`) for dynamic 1-on-1 Teams chat with zero key changes. | 🟢 Resolved |
 | **INC-20261016-009** | 2026-10-16 03:48 | **P2 (Medium)** | Export to Excel UX | Excel export was hidden behind Streamlit hover icon and lacked native `.xlsx` generation support. | Installed `openpyxl`, pinned `requirements.txt`, and added 1-click `.xlsx` & UTF-8-BOM `.csv` download buttons. | 🟢 Resolved |
+| **INC-20261016-010** | 2026-10-16 04:10 | **P1 (High)** | Production Deployment / IaC | EC2 cloud-init failed on `docker compose up` because container definitions (`Dockerfile`, `docker-compose.yml`, `nginx/`) were not yet committed to Git origin. | Committed Dockerfile, docker-compose.yml, and nginx reverse proxy configs to git repo, secured terraform keys in .gitignore, and synchronized container orchestration. | 🟢 Resolved |
 
 ---
 
@@ -274,3 +275,24 @@ Users navigating to Tab 1 (Excel View) expected a direct 1-click "Export to Exce
 - **Explicit 1-Click Buttons**: Added dual download buttons directly under the table:
   - `📥 ดาวน์โหลดไฟล์ Excel (.xlsx)` (application/vnd.openxmlformats)
   - `📄 ดาวน์โหลดไฟล์ CSV (.csv รองรับภาษาไทย)` (UTF-8-SIG with BOM to prevent Thai font corruption in Windows Excel).
+
+---
+
+### Incident ID: INC-20261016-010
+* **Date & Local Time**: 2026-10-16 04:10:00 (+07:00)
+* **Severity**: P1 (Production Infrastructure Bootstrapping Defect)
+* **Impacted Module**: `terraform/user_data.sh.tpl` & Git Repository Staging
+
+#### 1. Symptom & Executive Impact
+During autonomous Terraform provisioning of the AWS EC2 instance in Bangkok (`ap-southeast-7`), the cloud-init bootstrap script exited with returncode 1 during `docker compose up -d --build`. The web service remained inaccessible on HTTP port 80.
+
+#### 2. Technical Root Cause (RCA)
+1. **Uncommitted Container Artifacts**: While `Dockerfile`, `docker-compose.yml`, and `nginx/nginx.conf` had been authored locally, they had not yet been committed and pushed to the upstream GitHub repository (`PainWorry/20261013_0935_Streamlit_Mission_Control`).
+2. **Execution Timing**: When the EC2 instance performed `git clone`, it pulled the repository which lacked `docker-compose.yml`, causing `docker compose up` to abort with `no configuration file provided: not found`.
+3. **Artifact Exposure Guard**: The local `terraform/` directory contained sensitive artifacts (`*.pem`, `*.tfstate`, `*.binary`) which required strict `.gitignore` patterns prior to git push.
+
+#### 3. Architectural Remediation & Code Diff
+- **Gitignore Hardening**: Appended `.terraform/`, `*.tfstate*`, `*.tfplan`, `*.binary`, and `*.pem` to `.gitignore`.
+- **Repository Synchronization**: Staged and committed `Dockerfile`, `docker-compose.yml`, `nginx/`, and `terraform/` declarative definitions.
+- **Server Orchestration Re-trigger**: Triggered `docker compose` build directly on the EC2 host with verified local persistent mounts.
+- **Verification**: Validated HTTP 200 OK responses via Nginx on port 80 and direct Streamlit WebSocket communication.
