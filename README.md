@@ -1,119 +1,163 @@
-# Mission Control: ระบบติดตามและยืนยันคำสั่งงาน
+# 🚀 Mission Control: ระบบติดตามและยืนยันคำสั่งงาน
 
-ระบบติดตามคำสั่งงาน ออกแบบตามโครงสร้าง Excel View (แบบย่อ / แบบเต็ม) พัฒนาด้วย Streamlit รองรับระบบยืนยันตัวตนรายบุคคล (11 ผู้ใช้งาน) ด้วยแป้นกดตัวเลข PIN สไตล์มือถือ (0-9) และระบบแจ้งเตือนแบบเรียลไทม์เข้ากลุ่มแชต Microsoft Teams Group Chat
-
----
-
-## สารบัญ
-1. [โครงสร้างโปรเจกต์](#โครงสร้างโปรเจกต์)
-2. [ขั้นตอนการตั้งค่า Microsoft Teams Webhook](#ขั้นตอนการตั้งค่า-microsoft-teams-webhook)
-3. [การกำหนดค่าใน Secrets](#การกำหนดค่าใน-secrets)
-4. [วิธีติดตั้งและเริ่มใช้งานบนเครื่อง (Local Testing)](#วิธีติดตั้งและเริ่มใช้งานบนเครื่อง-local-testing)
-5. [การ Deploy บน Streamlit Community Cloud](#การ-deploy-บน-streamlit-community-cloud)
+> **Enterprise Operations & Task Order Orchestration Platform**  
+> พัฒนาด้วย Python 3.12, Streamlit, Docker Compose และ Nginx Reverse Proxy  
+> ออกแบบตามหลัก **Segregation of Duties (4-Eyes Principle)** และ **Dual-Confirmation State Machine**  
+> **Production Live URL**: **[http://43.211.85.163](http://43.211.85.163)** (AWS Asia Pacific - Bangkok `ap-southeast-7`)
 
 ---
 
-## โครงสร้างโปรเจกต์
-```text
-20261013_0935_Streamlit_Mission_Control/
-├── .streamlit/
-│   ├── secrets.toml          # ไฟล์คอนฟิกจริง (ไม่ commit ขึ้น git)
-│   └── secrets.toml.example  # เทมเพลตสำหรับตั้งค่า PIN, Webhook และ Google Sheets
-├── app.py                    # ซอร์สโค้ดหลักระบบ Mission Control (ภาษาไทย)
-├── proposal.md               # ข้อเสนอโครงการเดิม
-├── 20261013_0958_plan.md     # แผนสถาปัตยกรรมระบบ Data Contract
-├── requirements.txt          # รายการ Library ที่ใช้งาน
-├── run.ps1                   # สคริปต์รันแอปพลิเคชันแบบ Turnkey ใน .venv
-└── README.md                 # เอกสารคู่มือการใช้งาน
+## 📑 สารบัญวิศวกรรม (Table of Contents)
+1. [ภาพรวมระบบและฟีเจอร์เด่น (Executive Overview)](#1-ภาพรวมระบบและฟีเจอร์เด่น)
+2. [ตารางความเข้ากันได้ของระบบปฏิบัติการ (OS Compatibility Matrix)](#2-ตารางความเข้ากันได้ของระบบปฏิบัติการ-os-compatibility-matrix)
+3. [ขั้นตอนการดาวน์โหลดและติดตั้ง (Zero-Context Onboarding)](#3-ขั้นตอนการดาวน์โหลดและติดตั้ง-zero-context-onboarding)
+4. [คู่มือการรันระบบแต่ละโหมด (Multi-Mode Execution)](#4-คู่มือการรันระบบแต่ละโหมด-multi-mode-execution)
+5. [การตั้งค่า Microsoft Teams Dynamic Webhook](#5-การตั้งค่า-microsoft-teams-dynamic-webhook)
+6. [การตั้งค่า Secrets & Configuration (.streamlit/secrets.toml)](#6-การตั้งค่า-secrets--configuration)
+7. [เอกสารวิศวกรรมมาตรฐาน FAANG ในโปรเจกต์](#7-เอกสารวิศวกรรมมาตรฐาน-faang-ในโปรเจกต์)
+
+---
+
+## 1. ภาพรวมระบบและฟีเจอร์เด่น
+
+```mermaid
+flowchart LR
+    A["1. สั่งงาน (Creator) / สั่งงานแทน"] --> B["2. ยืนยันสองฝ่าย (Dual-Confirmation)"]
+    B --> C["3. กำลังดำเนินการ (บันทึก Step Note ได้)"]
+    C --> D["4. ขอส่งงาน (Assignee Submit)"]
+    D --> E["5. ตรวจรับและปิดงาน (Creator Close / 4-Eyes Principle)"]
 ```
 
----
-
-## ขั้นตอนการตั้งค่า Microsoft Teams Webhook
-
-> **First you have to create workflow in Power Automate / Microsoft Teams Workflows** เพื่อสร้าง HTTP Webhook URL สำหรับรับข้อความแจ้งเตือน
-
-### วิธีการสร้าง Webhook ผ่าน Workflows ในห้องแชต (แนะนำ):
-1. **เปิดแอป Workflows ในห้องแชต**:
-   - เลื่อนลงมาที่ช่องพิมพ์ข้อความในห้องแชต (Group Chat ที่มี 12 คน เช่น `OLT Digital Technology`)
-   - คลิกที่เครื่องหมายบวก (`+`) หรือจุดสามจุด (`...`) ใต้ช่องพิมพ์ข้อความ แล้วเลือกแอป **Workflows**
-2. **คลิกปุ่ม "Create workflows"**:
-   - คลิกปุ่ม **"Create workflows"** ที่มุมขวาบนของกล่องป๊อปอัป (ปุ่มสี่เหลี่ยมสีเทาเข้มข้างคำว่า Workflows)
-3. **ค้นหาเทมเพลต**:
-   - เมื่อหน้าต่างเลือกเทมเพลตเปิดขึ้นมา ที่ช่องค้นหาด้านบน ให้พิมพ์คำว่า: `webhook`
-   - คุณจะเห็นการ์ดเทมเพลตชื่อ:
-     > **`Post message in a chat when a webhook request is received`**
-     *(หรือหากไม่พบชื่อนี้ ให้เลือก `Post to a channel when a webhook request is received`)*
-4. **ยืนยันการเชื่อมต่อ**:
-   - คลิกที่การ์ดเทมเพลตนั้น ระบบจะแสดงการเชื่อมต่อบัญชี Microsoft Teams ของคุณ (ขึ้นเครื่องหมายถูกสีเขียว)
-   - คลิกปุ่ม **Next** (ถัดไป) ด้านล่าง
-5. **เลือกห้องแชตและบันทึก**:
-   - ในช่อง **Chat** หรือ **Channel**: ตรวจสอบว่าถูกเลือกเป็นกลุ่มแชตปัจจุบันของคุณ (`OLT Digital Technology`)
-   - คลิกปุ่ม **Create flow** (หรือ Add workflow)
-6. **คัดลอก Webhook URL**:
-   - ระบบจะสร้าง Flow สำเร็จ และแสดงกล่องข้อความที่มี **HTTP POST URL** ยาวๆ
-   - คลิกปุ่ม **Copy** แล้วนำลิงก์นั้นไปวางใน `secrets.toml` ได้ทันที
+- **Bilateral Dual-Confirmation**: คำสั่งงานทุกรายการต้องได้รับการกดยืนยันจากทั้งผู้สั่งและผู้รับผิดชอบก่อนเริ่มสถานะดำเนินการ
+- **4-Eyes Principle & Segregation of Duties**: ผู้รับผิดชอบ (Assignee) ส่งงานได้ แต่ไม่สามารถอนุมัติปิดงานของตนเองได้ ต้องให้ผู้สั่งงาน (Creator) หรือ Admin ตรวจรับเท่านั้น
+- **Mobile PIN Keypad**: แป้นกดรหัส PIN 6 หลักสไตล์ตู้ ATM/มือถือ พร้อมการจดจำ Session อัตโนมัติ (30-day SSO Cookie)
+- **1-Click Native Excel Export**: ปุ่มดาวน์โหลดข้อมูลทั้งรูปแบบ `.xlsx` (OpenPyXL) และ `.csv` รองรับภาษาไทย (UTF-8 BOM)
+- **Real-Time Heartbeat**: แสดงผลตารางงานแบบเรียลไทม์ผ่าน Streamlit Fragment (`run_every="4s"`)
+- **Smart Counterparty Routing**: แจ้งเตือนเข้า 1-on-1 Teams Chat อัตโนมัติโดยใช้ `recipient_email` โดยไม่ต้องเปลี่ยน Webhook URL เมื่อมีคนใหม่เข้าทีม
 
 ---
 
-### วิธีการสร้างแบบ Manual ผ่าน Power Automate Portal (ทางเลือกสำรอง):
+## 2. ตารางความเข้ากันได้ของระบบปฏิบัติการ (OS Compatibility Matrix)
+
+| ระบบปฏิบัติการ (OS) | สถานะความเข้ากันได้ | สภาพแวดล้อมที่รองรับ / หมายเหตุ |
+| :--- | :---: | :--- |
+| **Ubuntu / Debian Linux** | 🟢 Full Native Support | ทดสอบบน Ubuntu 22.04 LTS / 24.04 LTS Noble (บน AWS EC2 และ Local) |
+| **Windows 11 / 10 (WSL2)** | 🟢 Full Native Support | รันผ่าน WSL Ubuntu terminal ด้วย Docker หรือ Python venv |
+| **Windows 11 / 10 Native** | 🟢 Native (PowerShell) | มีสคริปต์ `run.ps1` สำหรับตั้งค่า venv และเปิดใช้งานแบบ Turnkey 1 คลิก |
+| **macOS (Apple Silicon / Intel)** | 🟢 Full Native Support | รองรับ Python 3.12 (Homebrew) และ Docker Desktop |
+
+---
+
+## 3. ขั้นตอนการดาวน์โหลดและติดตั้ง (Zero-Context Onboarding)
+
+### วิธีที่ 1: ผ่าน Git Command Line (แนะนำสำหรับนักพัฒนา)
+```bash
+git clone https://github.com/PainWorry/20261013_0935_Streamlit_Mission_Control.git
+cd 20261013_0935_Streamlit_Mission_Control
+```
+
+### วิธีที่ 2: ดาวน์โหลดเป็นไฟล์ ZIP (สำหรับผู้ใช้งานทั่วไป)
+1. ไปที่หน้า GitHub Repository: [PainWorry/20261013_0935_Streamlit_Mission_Control](https://github.com/PainWorry/20261013_0935_Streamlit_Mission_Control)
+2. คลิกปุ่มสีเขียว **`Code`** $\rightarrow$ เลือก **`Download ZIP`**
+3. แตกไฟล์ ZIP ออกมา แล้วเปิด Terminal หรือ PowerShell ภายในโฟลเดอร์นั้น
+
+---
+
+## 4. คู่มือการรันระบบแต่ละโหมด (Multi-Mode Execution)
+
+### โหมด A: Production บน AWS Cloud (เข้าใช้งานได้ทันที ไม่ต้องรันเครื่องตัวเอง)
+👉 **เปิดเบราว์เซอร์ไปที่**: **[http://43.211.85.163](http://43.211.85.163)**
+
+---
+
+### โหมด B: รันบน Windows ด้วย Turnkey PowerShell (1-Click Run)
+ดับเบิลคลิกไฟล์ `run.ps1` หรือเปิด PowerShell แล้วพิมพ์:
+```powershell
+powershell -ExecutionPolicy Bypass -File run.ps1
+```
+*สคริปต์จะตรวจสอบ Python, สร้าง `.venv`, ติดตั้ง dependencies และเปิดเบราว์เซอร์ให้อัตโนมัติ*
+
+---
+
+### โหมด C: รันผ่าน Docker Compose บน Linux / macOS / Server
+```bash
+# คัดลอก secrets.toml ตัวอย่าง
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+
+# สั่ง Build และรันคอนเทนเนอร์ในพื้นหลัง
+docker compose up -d --build
+
+# ตรวจสอบสถานะการทำงาน
+docker compose ps
+```
+*เปิดเบราว์เซอร์ไปที่: `http://localhost` (ผ่าน Nginx พอร์ต 80)*
+
+---
+
+### โหมด D: รันแบบ Manual Local Dev (Python CLI)
+```bash
+# 1. สร้าง Virtual Environment
+python3 -m venv .venv
+source .venv/bin/activate  # บน Windows: .venv\Scripts\activate
+
+# 2. ติดตั้ง Dependencies
+pip install -r requirements.txt
+
+# 3. รัน Streamlit App
+streamlit run app.py
+```
+*เปิดเบราว์เซอร์ไปที่: `http://localhost:8501`*
+
+---
+
+## 5. การตั้งค่า Microsoft Teams Dynamic Webhook
+
+ระบบรองรับการส่งข้อความเข้าห้องแชต 1-on-1 หรือกลุ่มแชต ผ่าน Power Automate Flow:
+
 1. เข้าไปที่ [make.powerautomate.com](https://make.powerautomate.com)
-2. เมนูด้านซ้ายเลือก **Create** -> **Instant cloud flow**
-3. เลือก Trigger: **"When a Teams webhook request is received"** (หรือ **"When an HTTP request is received"**)
+2. สร้าง Flow ชนิด **Automated cloud flow** หรือ **Instant cloud flow**
+3. เลือก Trigger: **"When an HTTP request is received"**
 4. เพิ่ม Action: **"Post message in a chat or channel"**
    - Post as: `Flow bot`
-   - Post in: `Group chat`
-   - Group chat: เลือกกลุ่มแชตของทีม
-   - Message: ใส่เนื้อหา Dynamic content จาก Trigger
-5. กด **Save** แล้วคัดลอก **HTTP POST URL** จากกล่อง Trigger แรก
+   - Post in: `Group chat` (หรือ `Chat with Flow bot`)
+   - Recipient / Chat: กำหนดให้ดึงค่าจาก JSON Payload: `triggerBody()?['recipient_email']`
+5. บันทึก Flow แล้วคัดลอก **HTTP POST URL** ไปใส่ใน `.streamlit/secrets.toml`
 
 ---
 
-## การกำหนดค่าใน Secrets
+## 6. การตั้งค่า Secrets & Configuration
 
-นำ Webhook URL ที่ได้ไปวางในไฟล์ `.streamlit/secrets.toml`:
+สร้างไฟล์ `.streamlit/secrets.toml` โดยอ้างอิงจากตัวอย่าง:
 
 ```toml
 # รหัสลับสำหรับขอรีเซ็ตรหัสผ่าน (Master Reset Code)
 [security]
 admin_reset_code = "KuromiBlackCat"
-admin_contact = "Herren@Onelink.co.th"
+admin_contact = "admin@onelink.co.th"
 
-# URL ของเว็บแอป
-app_url = "http://localhost:8501"
+# URL ของเว็บแอป (สำหรับทำ Deep Link ใน Teams Notification)
+app_url = "http://43.211.85.163"
 
-# การเชื่อมต่อ Microsoft Teams Group Chat
+# การเชื่อมต่อ Microsoft Teams Webhook
 [teams]
-webhook_url = "https://prod-xx.southeastasia.logic.azure.com:443/workflows/xxxx/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xxxx"
+webhook_url = "https://<your-power-automate-url>"
 
-# การเชื่อมต่อ Google Sheets ผ่าน Streamlit (หากใช้งาน)
-[connections.gsheets]
-spreadsheet = "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_HERE/edit"
+# การเชื่อมต่อ Email สำรอง (SMTP)
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+sender_email = ""
+sender_password = ""
+receiver_email = ""
 ```
 
 ---
 
-## วิธีติดตั้งและเริ่มใช้งานบนเครื่อง (Local Testing)
+## 7. เอกสารวิศวกรรมมาตรฐาน FAANG ในโปรเจกต์
 
-1. รันผ่านสคริปต์ Turnkey PowerShell (จะติดตั้ง dependencies ใน `.venv` อัตโนมัติ):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File run.ps1
-   ```
-2. หรือรันผ่าน Streamlit โดยตรง:
-   ```powershell
-   .\.venv\Scripts\streamlit.exe run app.py
-   ```
-3. เปิดเบราว์เซอร์ไปที่ `http://localhost:8501`
-   - **Username**: เช่น `herren.k`, `nataphon.p` (แสดง placeholder เป็น `herren.k`)
-   - **PIN เริ่มต้น**: `111111` (ระบบจะให้ตั้ง PIN 6 หลักใหม่ในการเข้าครั้งแรก)
-   - **ลืมรหัสผ่าน**: ติดต่อ `Herren@Onelink.co.th` ใช้รหัสลับ `KuromiBlackCat`
-
----
-
-## การ Deploy บน Streamlit Community Cloud
-
-1. นำโค้ดขึ้น GitHub Repository (Private)
-2. เข้าสู่ระบบที่ [share.streamlit.io](https://share.streamlit.io) แล้วกด **Create app**
-3. เลือก Repository: `PainWorry/20261013_0935_Streamlit_Mission_Control` | Branch: `main` | Main file: `app.py`
-4. ไปที่ **Settings** -> **Secrets** แล้ววางข้อมูลจาก `.streamlit/secrets.toml`
-5. กด **Save** และเริ่มใช้งานได้ทันที
+| ชื่อเอกสาร | ระดับผู้ใช้งาน | วัตถุประสงค์และเนื้อหาสำคัญ |
+| :--- | :---: | :--- |
+| **[DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/DISASTER_RECOVERY_RECONSTRUCTION_SPEC.md)** | AI Agent / Senior Eng | **Zero-Code AI Rebuild Standard**: Data Contracts, Golden Vectors, Problem-Fix Log 001-010, และ Junior Mentoring |
+| **[AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/AWS_DEPLOYMENT_EXECUTIVE_PROPOSAL.md)** | CEO / CTO / C-Suite | แผนสถาปัตยกรรมคลาวด์, การเปรียบเทียบ Region (Bangkok 96/100), FinOps 3-Tier Overrun Buffer |
+| **[POST_APPROVAL_DEVOPS_RUNBOOK.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/POST_APPROVAL_DEVOPS_RUNBOOK.md)** | SRE / DevOps | คู่มือปฏิบัติการเซิร์ฟเวอร์, การเชื่อมต่อ SSH, การสำรองข้อมูล CSV, และ Disaster Recovery Runbook |
+| **[CHANGELOG.md](file:///home/herrenk/User/20261013_0935_Streamlit_Mission_Control/CHANGELOG.md)** | Lead / Auditor | บันทึกประวัติการแก้ปัญหาทั้งหมด (INC-001 ถึง INC-010) ตามมาตรฐาน FAANG Hybrid Two-Tier Standard |
