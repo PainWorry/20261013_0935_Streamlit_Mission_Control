@@ -23,6 +23,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-009** | 2026-10-16 03:48 | **P2 (Medium)** | Export to Excel UX | Excel export was hidden behind Streamlit hover icon and lacked native `.xlsx` generation support. | Installed `openpyxl`, pinned `requirements.txt`, and added 1-click `.xlsx` & UTF-8-BOM `.csv` download buttons. | 🟢 Resolved |
 | **INC-20261016-010** | 2026-10-16 04:10 | **P1 (High)** | Production Deployment / IaC | EC2 cloud-init failed on `docker compose up` because container definitions (`Dockerfile`, `docker-compose.yml`, `nginx/`) were not yet committed to Git origin. | Committed Dockerfile, docker-compose.yml, and nginx reverse proxy configs to git repo, secured terraform keys in .gitignore, and synchronized container orchestration. | 🟢 Resolved |
 | **INC-20261016-011** | 2026-10-16 04:23 | **P2 (Medium)** | SSL / Transport Security | Browser displayed 'Connection is not secure' (Not Secure) warning when accessing via raw HTTP IP. | Provisioned AWS CloudFront Distribution with Amazon Managed Wildcard SSL (HTTPS 🔒), dynamic WebSockets, and HTTP-to-HTTPS redirect. | 🟢 Resolved |
+| **INC-20261016-012** | 2026-10-16 04:30 | **P0 (Critical)** | Streamlit WebSocket / CORS | Web UI blinks/flickers indefinitely on skeleton loader (`stAppSkeleton`) behind CloudFront because Streamlit default `enableCORS = true` rejected `wss://.../_stcore/stream` connection. | Added `.streamlit/config.toml`, injected `STREAMLIT_SERVER_ENABLE_CORS=false` & `STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false` in Docker and docker-compose. | 🟢 Resolved |
 
 ---
 
@@ -318,4 +319,31 @@ When accessing the production URL via raw public IP (`http://43.211.85.163`), mo
 - **Dynamic WebSocket & No-Cache Policy**: Configured `Managed-CachingDisabled` (`4135ea2d-6df8-44a3-9df3-4b5a84be39ad`) and `Managed-AllViewerExceptHostHeader` (`b689b0a8-53d0-40ab-baf2-68738e2966ac`) to ensure Streamlit WebSockets, session cookies, and fragments stream without edge caching delays.
 - **HTTP to HTTPS Redirection**: Enforced `viewer_protocol_policy = "redirect-to-https"` so all unencrypted traffic is automatically upgraded to HTTPS.
 - **Verification**: Validated DNS resolution and TLS handshake on `https://d1z7r0ybkby2pf.cloudfront.net`.
+
+---
+
+### Incident ID: INC-20261016-012
+* **Date & Local Time**: 2026-10-16 04:30:00 (+07:00)
+* **Severity**: P0 (Critical App Blocker / Endless Blinking Skeleton)
+* **Impacted Module**: Streamlit WebSocket Engine / `.streamlit/config.toml` & `Dockerfile`
+
+#### 1. Symptom & Executive Impact
+When users opened `https://d1z7r0ybkby2pf.cloudfront.net`, the page loaded HTML and CSS but remained stuck in an endless blinking/flickering animation (Streamlit loading skeleton: `stAppSkeleton`). The actual Mission Control UI (PIN keypad, task table, buttons) never appeared, and the browser console reported continuous WebSocket handshake failures: `WebSocket connection to 'wss://.../_stcore/stream' failed`.
+
+#### 2. Technical Root Cause (RCA)
+1. **Streamlit Origin-Host Mismatch Check**: By default, Streamlit enforces `server.enableCORS = true`. Its Tornado backend compares the incoming HTTP `Origin` header (`https://d1z7r0ybkby2pf.cloudfront.net`) against the `Host` header (`ec2-43-211-85-163.ap-southeast-7.compute.amazonaws.com`).
+2. **Handshake Abort**: Because the CloudFront domain does not match the EC2 origin hostname, Tornado's `WebSocketHandler.check_origin()` rejected the WebSocket handshake with HTTP 403 Forbidden.
+3. **Endless Client Retries**: The Streamlit JavaScript client treats a closed WebSocket (`readyState: 3`) as a temporary network drop and endlessly retries every few hundred milliseconds, causing the loading skeleton to pulse/blink indefinitely.
+
+#### 3. Architectural Remediation & Code Diff
+- **Configuration File**: Created `.streamlit/config.toml` with:
+  ```toml
+  [server]
+  enableCORS = false
+  enableXsrfProtection = false
+  ```
+- **Container Environment Variables**: Injected `STREAMLIT_SERVER_ENABLE_CORS=false` and `STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false` directly into `docker-compose.yml`.
+- **Dockerfile Launch Flags**: Updated `ENTRYPOINT` in `Dockerfile` to include `--server.enableCORS=false` and `--server.enableXsrfProtection=false`.
+- **Verification**: Restarted backend container and verified active bidirectional WebSocket handshake via Chrome DevTools.
+
 
