@@ -22,3 +22,13 @@ output "ssh_connection_command" {
   description = "SSH Command to connect to the server"
   value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_eip.app_eip.public_ip}"
 }
+
+output "https_url" {
+  description = "Production HTTPS URL (Secure 🔒 via AWS CloudFront Managed SSL)"
+  value       = "https://${aws_cloudfront_distribution.app_cdn.domain_name}"
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront Domain Name"
+  value       = aws_cloudfront_distribution.app_cdn.domain_name
+}

@@ -157,3 +157,58 @@ resource "aws_eip" "app_eip" {
     Name = "${var.project_name}-bkk-eip"
   }
 }
+
+# 6. CloudFront Distribution for Managed SSL (HTTPS 🔒)
+resource "aws_cloudfront_distribution" "app_cdn" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "Managed CloudFront HTTPS for Streamlit Mission Control"
+  price_class         = "PriceClass_All"
+  wait_for_deployment = false
+
+  origin {
+    domain_name = aws_eip.app_eip.public_dns
+    origin_id   = "EC2-Streamlit-Nginx"
+
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "http-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
+      origin_keepalive_timeout = 60
+      origin_read_timeout      = 60
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "EC2-Streamlit-Nginx"
+
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    # Managed-CachingDisabled (disables caching for dynamic Streamlit app & WebSockets)
+    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+
+    # Managed-AllViewerExceptHostHeader (forwards cookies, query params, headers except Host)
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Name        = "${var.project_name}-bkk-cloudfront"
+    Environment = "production"
+    ManagedBy   = "terraform"
+  }
+}
+

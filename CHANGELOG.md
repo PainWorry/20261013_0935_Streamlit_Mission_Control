@@ -22,6 +22,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-008** | 2026-10-16 03:25 | **P2 (Medium)** | Teams Webhook / Scalability | Static notification routing required changing Webhook keys whenever new members (e.g. Adam) onboarded. | Engineered Smart Counterparty Routing (`recipient_email`) for dynamic 1-on-1 Teams chat with zero key changes. | 🟢 Resolved |
 | **INC-20261016-009** | 2026-10-16 03:48 | **P2 (Medium)** | Export to Excel UX | Excel export was hidden behind Streamlit hover icon and lacked native `.xlsx` generation support. | Installed `openpyxl`, pinned `requirements.txt`, and added 1-click `.xlsx` & UTF-8-BOM `.csv` download buttons. | 🟢 Resolved |
 | **INC-20261016-010** | 2026-10-16 04:10 | **P1 (High)** | Production Deployment / IaC | EC2 cloud-init failed on `docker compose up` because container definitions (`Dockerfile`, `docker-compose.yml`, `nginx/`) were not yet committed to Git origin. | Committed Dockerfile, docker-compose.yml, and nginx reverse proxy configs to git repo, secured terraform keys in .gitignore, and synchronized container orchestration. | 🟢 Resolved |
+| **INC-20261016-011** | 2026-10-16 04:23 | **P2 (Medium)** | SSL / Transport Security | Browser displayed 'Connection is not secure' (Not Secure) warning when accessing via raw HTTP IP. | Provisioned AWS CloudFront Distribution with Amazon Managed Wildcard SSL (HTTPS 🔒), dynamic WebSockets, and HTTP-to-HTTPS redirect. | 🟢 Resolved |
 
 ---
 
@@ -296,3 +297,25 @@ During autonomous Terraform provisioning of the AWS EC2 instance in Bangkok (`ap
 - **Repository Synchronization**: Staged and committed `Dockerfile`, `docker-compose.yml`, `nginx/`, and `terraform/` declarative definitions.
 - **Server Orchestration Re-trigger**: Triggered `docker compose` build directly on the EC2 host with verified local persistent mounts.
 - **Verification**: Validated HTTP 200 OK responses via Nginx on port 80 and direct Streamlit WebSocket communication.
+
+---
+
+### Incident ID: INC-20261016-011
+* **Date & Local Time**: 2026-10-16 04:23:00 (+07:00)
+* **Severity**: P2 (Security & User Trust Defect)
+* **Impacted Module**: AWS Edge Transport / `terraform/main.tf` (`aws_cloudfront_distribution`)
+
+#### 1. Symptom & Executive Impact
+When accessing the production URL via raw public IP (`http://43.211.85.163`), modern browsers (Google Chrome, Microsoft Edge, Safari) displayed a prominent "Not secure" / "Connection is not secure" warning icon. Corporate users hesitated to log in or enter PIN credentials due to lack of TLS/SSL encryption.
+
+#### 2. Technical Root Cause (RCA)
+1. **Raw IP Transport Limitation**: Public Certificate Authorities (e.g. Let's Encrypt) do not issue trusted SSL certificates directly to raw IPv4 addresses without a fully qualified domain name (FQDN).
+2. **Missing Edge Termination**: The initial deployment terminated traffic on EC2 Port 80 directly via HTTP without an edge SSL termination layer.
+
+#### 3. Architectural Remediation & Code Diff
+- **AWS CloudFront Edge Layer**: Provisioned an `aws_cloudfront_distribution` resource in Terraform fronting the Bangkok EC2 public DNS (`ec2-43-211-85-163.ap-southeast-7.compute.amazonaws.com`).
+- **Managed SSL**: Activated Amazon's default wildcard SSL certificate (`*.cloudfront.net`), providing 100% browser-trusted HTTPS with zero certificate management or renewal overhead.
+- **Dynamic WebSocket & No-Cache Policy**: Configured `Managed-CachingDisabled` (`4135ea2d-6df8-44a3-9df3-4b5a84be39ad`) and `Managed-AllViewerExceptHostHeader` (`b689b0a8-53d0-40ab-baf2-68738e2966ac`) to ensure Streamlit WebSockets, session cookies, and fragments stream without edge caching delays.
+- **HTTP to HTTPS Redirection**: Enforced `viewer_protocol_policy = "redirect-to-https"` so all unencrypted traffic is automatically upgraded to HTTPS.
+- **Verification**: Validated DNS resolution and TLS handshake on `https://d1z7r0ybkby2pf.cloudfront.net`.
+

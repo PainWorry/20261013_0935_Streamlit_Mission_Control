@@ -2,8 +2,8 @@
 
 > **Enterprise Operations & Task Order Orchestration Platform**  
 > พัฒนาด้วย Python 3.12, Streamlit, Docker Compose และ Nginx Reverse Proxy  
-> ออกแบบตามหลัก **Segregation of Duties (4-Eyes Principle)** และ **Dual-Confirmation State Machine**  
-> **Production Live URL**: **[http://43.211.85.163](http://43.211.85.163)** (AWS Asia Pacific - Bangkok `ap-southeast-7`)
+> **Production Live URL (Secure 🔒)**: **[https://d1z7r0ybkby2pf.cloudfront.net](https://d1z7r0ybkby2pf.cloudfront.net)**  
+> *(Direct IP Fallback: [http://43.211.85.163](http://43.211.85.163) | Region: AWS Bangkok `ap-southeast-7`)*
 
 ---
 
@@ -65,8 +65,9 @@ cd 20261013_0935_Streamlit_Mission_Control
 
 ## 4. คู่มือการรันระบบแต่ละโหมด (Multi-Mode Execution)
 
-### โหมด A: Production บน AWS Cloud (เข้าใช้งานได้ทันที ไม่ต้องรันเครื่องตัวเอง)
-👉 **เปิดเบราว์เซอร์ไปที่**: **[http://43.211.85.163](http://43.211.85.163)**
+### โหมด A: Production บน AWS Cloud (เข้าใช้งานได้ทันที ปลอดภัย 🔒 มีใบรับรอง SSL)
+👉 **เข้าใช้งานผ่าน HTTPS (แนะนำ)**: **[https://d1z7r0ybkby2pf.cloudfront.net](https://d1z7r0ybkby2pf.cloudfront.net)**  
+*(หรือ Direct IP Fallback: [http://43.211.85.163](http://43.211.85.163))*
 
 ---
 

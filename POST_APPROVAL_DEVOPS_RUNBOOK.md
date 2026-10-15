@@ -18,7 +18,8 @@
 | **Static IPv4 (EIP)** | `mission-control-eip` | Elastic Static Public IP | `43.211.85.163` |
 | **Security Group** | `mission-control-sg-web` | Inbound: 80, 443, 8501, 22 (All CIDR 0.0.0.0/0) | `sg-0b8e2cc17fa8c03bf` |
 | **SSH Key Pair** | `mission_control_bkk_key.pem` | RSA 4096-bit OpenSSH | Stored securely in `terraform/` (chmod 400) |
-| **Public Web URL** | Production Domain / IP | Nginx Port 80 (Auto-upgraded WebSockets) | **[http://43.211.85.163](http://43.211.85.163)** |
+| **Production HTTPS URL** | CloudFront Edge (Managed SSL 🔒) | Amazon Wildcard SSL | **[https://d1z7r0ybkby2pf.cloudfront.net](https://d1z7r0ybkby2pf.cloudfront.net)** |
+| **Direct Web URL (HTTP)**| Direct Nginx Fallback | Nginx Port 80 (Auto-upgraded WebSockets) | [http://43.211.85.163](http://43.211.85.163) |
 | **Direct Streamlit URL** | Internal / Debug Port | Streamlit Port 8501 | [http://43.211.85.163:8501](http://43.211.85.163:8501) |
 
 ---

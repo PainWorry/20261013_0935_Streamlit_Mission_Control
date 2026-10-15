@@ -4,8 +4,8 @@
 > **Target Audience**: Chief Executive Officer (CEO), Chief Technology Officer (CTO), Head of Infrastructure, VP of Engineering  
 > **Standard Compliance**: Modeled on FAANG Principal Solution Architect & AWS Well-Architected Framework  
 > **Target System**: Streamlit Mission Control (ระบบติดตามและยืนยันคำสั่งงาน)  
-> **Production Region**: AWS Asia Pacific (Bangkok) `ap-southeast-7`  
-> **Live Production URL**: [http://43.211.85.163](http://43.211.85.163)  
+> **Live Production URL (Secure 🔒)**: [https://d1z7r0ybkby2pf.cloudfront.net](https://d1z7r0ybkby2pf.cloudfront.net)  
+> *(Direct IP Fallback: [http://43.211.85.163](http://43.211.85.163))*
 
 ---
 
