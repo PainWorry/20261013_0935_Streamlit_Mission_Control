@@ -765,28 +765,51 @@ if view_mode_url == "detail" and selected_order_id:
     act_col1, act_col2, act_col3, act_col4 = st.columns(4)
 
     # 1. ขั้นตอนยืนยันคำสั่งงาน (Dual Confirmation)
-    if selected_row['status'] == "รอยืนยัน":
-        if is_creator and "รอยืนยัน" in str(selected_row['creator_confirmed']):
-            with act_col1:
-                if st.button("👑 คนสั่งยืนยันความถูกต้อง", key=f"sp_cconf_{selected_order_id}", type="primary", use_container_width=True):
-                    orders_df.loc[row_idx, "creator_confirmed"] = f"ยืนยันแล้ว ({now_str})"
-                    if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "assignee_confirmed"]):
-                        orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
-                    save_orders_data(conn, orders_df)
-                    send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ยืนยันคำสั่งงานแล้ว")
-                    st.toast("ยืนยันคำสั่งงานเรียบร้อย", icon="✅")
-                    st.rerun()
+    if selected_row['status'] in ["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]:
+        creator_needs_confirm = "รอยืนยัน" in str(selected_row['creator_confirmed'])
+        assignee_needs_confirm = "รอยืนยัน" in str(selected_row['assignee_confirmed'])
 
-        if is_assignee and "รอยืนยัน" in str(selected_row['assignee_confirmed']):
+        # Auto-heal: หากยืนยันครบทั้งสองฝ่ายแล้วแต่สถานะยังค้าง ให้ปรับเป็นกำลังดำเนินการทันที
+        if not creator_needs_confirm and not assignee_needs_confirm:
+            orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+            save_orders_data(conn, orders_df)
+            st.rerun()
+
+        # 1.1 ฝั่งคนสั่งงาน (Creator)
+        if creator_needs_confirm:
+            with act_col1:
+                if is_creator or is_admin:
+                    cconf_label = "👑 คนสั่งยืนยันความถูกต้อง" if is_creator else "👑 ยืนยันคำสั่งงาน (ในนาม Admin / ผู้บันทึก)"
+                    if st.button(cconf_label, key=f"sp_cconf_{selected_order_id}", type="primary", use_container_width=True):
+                        orders_df.loc[row_idx, "creator_confirmed"] = f"ยืนยันแล้ว ({now_str})"
+                        if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "assignee_confirmed"]):
+                            orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+                        else:
+                            orders_df.loc[row_idx, "status"] = "รอคนรับผิดชอบตอบรับ"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ยืนยันคำสั่งงานแล้ว")
+                        st.toast("ยืนยันคำสั่งงานเรียบร้อย", icon="✅")
+                        st.rerun()
+                else:
+                    st.info(f"⏳ อยู่ระหว่างรอคนสั่งงาน (**{selected_row['creator']}**) กดยืนยันความถูกต้อง")
+
+        # 1.2 ฝั่งคนรับผิดชอบงาน (Assignee)
+        if assignee_needs_confirm:
             with act_col2:
-                if st.button("👤 คนรับผิดชอบตอบรับงาน", key=f"sp_aconf_{selected_order_id}", type="primary", use_container_width=True):
-                    orders_df.loc[row_idx, "assignee_confirmed"] = f"ยืนยันแล้ว ({now_str})"
-                    if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "creator_confirmed"]):
-                        orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
-                    save_orders_data(conn, orders_df)
-                    send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ตอบรับคำสั่งงานแล้ว")
-                    st.toast("ตอบรับงานเรียบร้อย", icon="✅")
-                    st.rerun()
+                if is_assignee or is_admin:
+                    aconf_label = "👤 คนรับผิดชอบตอบรับงาน" if is_assignee else "👤 ตอบรับงาน (ในนาม Admin)"
+                    if st.button(aconf_label, key=f"sp_aconf_{selected_order_id}", type="primary", use_container_width=True):
+                        orders_df.loc[row_idx, "assignee_confirmed"] = f"ยืนยันแล้ว ({now_str})"
+                        if "ยืนยันแล้ว" in str(orders_df.loc[row_idx, "creator_confirmed"]):
+                            orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+                        else:
+                            orders_df.loc[row_idx, "status"] = "รอคนสั่งยืนยัน"
+                        save_orders_data(conn, orders_df)
+                        send_teams_notification(selected_order_id, selected_row['task_title'], selected_row['creator'], selected_row['assignee'], selected_row['deadline'], orders_df.loc[row_idx, "status"], f"{my_display_name} ตอบรับคำสั่งงานแล้ว")
+                        st.toast("ตอบรับงานเรียบร้อย", icon="✅")
+                        st.rerun()
+                else:
+                    st.info(f"⏳ อยู่ระหว่างรอคนรับผิดชอบ (**{selected_row['assignee']}**) ตอบรับคำสั่งงาน")
 
     # 2. ขั้นตอนกำลังดำเนินการ (In Progress) -> ผู้รับผิดชอบส่งงานได้เท่านั้น / คนสั่งงานรอตรวจรับ
     elif selected_row['status'] == "กำลังดำเนินการ":

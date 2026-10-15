@@ -18,6 +18,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-004** | 2026-10-16 02:10 | **P2 (Medium)** | Progress Form UX | Step note input text remained stuck in `text_area` after submit, risking duplicate log submissions. | Enabled `clear_on_submit=True` across all three step note forms (`quick`, `subpage`, `main_tab`). | 🟢 Resolved |
 | **INC-20261016-005** | 2026-10-16 02:14 | **P0 (Critical)** | State Machine & RBAC | Task could be closed while still in progress; Assignee could approve and close their own work. | Enforced strict State Machine & 4-Eyes Principle: only Creator can close once Assignee submits. | 🟢 Resolved |
 | **INC-20261016-006** | 2026-10-16 02:26 | **P0 (Critical)** | Session Termination | Clicking Logout in Incognito failed to log out due to server-side auto-restore race condition. | Added `is_logged_out` guard, client-side `history.replaceState` URL stripping, and cookie expiration. | 🟢 Resolved |
+| **INC-20261016-007** | 2026-10-16 02:58 | **P1 (High)** | Action Panel / Confirmation | Verbal order recorded on behalf of Creator (`รอคนสั่งยืนยัน`) lacked confirm button due to rigid `"รอยืนยัน"` check. | Expanded status check to `["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]` + added role-aware & Admin fallback confirmation. | 🟢 Resolved |
 
 ---
 
@@ -177,3 +178,55 @@ def clear_persistent_cookie():
     components.html(js_code, height=0, width=0)
 ```
 * **Result**: Logout cleanly terminates session, wipes browser address bar, and permanently clears cookies across Normal and Incognito windows.
+
+---
+
+### Incident ID: INC-20261016-007
+* **Date & Local Time**: 2026-10-16 02:58:00 (+07:00)
+* **Severity**: P1 (High Functional Usability Defect)
+* **Impacted Module**: `app.py::Action Panel (Dual Confirmation State Machine)`
+
+#### 1. Symptom & Executive Impact
+When a user (e.g., `herren.k`) created a ticket on behalf of verbal orders from leadership (setting Creator to `nataphon.p CTO` and Assignee to `herren.k`), the ticket entered status `รอคนสั่งยืนยัน`. However, navigating into the ticket details revealed an empty Action Panel with no confirmation button ("ไม่มีปุ่มยืนยัน"), showing only the cancel button. Even when leadership logged in on a second window, no confirmation button appeared, preventing the ticket from advancing to "กำลังดำเนินการ".
+
+#### 2. Technical Root Cause (RCA)
+1. **Status String Mismatch**:
+   During ticket generation (`tab_new_order`), if the recorder is not the creator, initial status was set to `init_status = "รอคนสั่งยืนยัน"` (or `"รอคนรับผิดชอบตอบรับ"`).
+   However, the Action Panel rendering condition in `app.py` strictly evaluated:
+   ```python
+   if selected_row['status'] == "รอยืนยัน":
+   ```
+   Because `status` was `"รอคนสั่งยืนยัน"` and not `"รอยืนยัน"`, this condition evaluated to `False`, completely skipping the dual confirmation block.
+2. **Missing Admin / Recorder Fallback**:
+   The confirmation button only allowed the exact matched username (`is_creator`) without offering an administrative fallback (`is_admin`) when an assistant/admin is authorized to confirm on the executive's behalf.
+
+#### 3. Architectural Remediation & Code Diff
+```python
+# Before: Hardcoded string check skipped specialized pending statuses
+if selected_row['status'] == "รอยืนยัน":
+    if is_creator and "รอยืนยัน" in str(selected_row['creator_confirmed']):
+        ...
+
+# After: Comprehensive status check + Role-aware buttons & Admin fallback
+if selected_row['status'] in ["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]:
+    creator_needs_confirm = "รอยืนยัน" in str(selected_row['creator_confirmed'])
+    assignee_needs_confirm = "รอยืนยัน" in str(selected_row['assignee_confirmed'])
+
+    # Auto-heal: Transition to 'กำลังดำเนินการ' if both parties already confirmed
+    if not creator_needs_confirm and not assignee_needs_confirm:
+        orders_df.loc[row_idx, "status"] = "กำลังดำเนินการ"
+        save_orders_data(conn, orders_df)
+        st.rerun()
+
+    # 1.1 Creator confirmation (or Admin on their behalf)
+    if creator_needs_confirm:
+        with act_col1:
+            if is_creator or is_admin:
+                cconf_label = "👑 คนสั่งยืนยันความถูกต้อง" if is_creator else "👑 ยืนยันคำสั่งงาน (ในนาม Admin / ผู้บันทึก)"
+                if st.button(cconf_label, key=f"sp_cconf_{selected_order_id}", type="primary", use_container_width=True):
+                    ...
+            else:
+                st.info(f"⏳ อยู่ระหว่างรอคนสั่งงาน (**{selected_row['creator']}**) กดยืนยันความถูกต้อง")
+```
+* **Guardrail**: If the current user is not authorized to confirm, a clear informational message explicitly states who the task is waiting for, eliminating user ambiguity.
+
