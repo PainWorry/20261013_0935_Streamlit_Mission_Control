@@ -90,10 +90,42 @@ def send_teams_notification(order_id, title, creator, assignee, deadline, status
 
     app_url = st.secrets.get("app_url", "")
     creator_email = get_user_email(creator)
-    teams_direct_chat = generate_teams_chat_url(creator, f"[Mission Control] แจ้งอัปเดตงาน {order_id}: {title} (สถานะ: {status})")
+    assignee_email = get_user_email(assignee)
+
+    # คำนวณผู้รับแจ้งเตือนอัจฉริยะ (Smart Counterparty Routing)
+    curr_user = st.session_state.get("auth_user", {})
+    curr_username = curr_user.get("username", "") if curr_user else ""
+    curr_user_email = get_user_email(curr_username)
+
+    if curr_user_email and curr_user_email == creator_email:
+        recipient_email = assignee_email
+        recipient_name = assignee
+    elif curr_user_email and curr_user_email == assignee_email:
+        recipient_email = creator_email
+        recipient_name = creator
+    else:
+        if "รอคนสั่งยืนยัน" in str(status):
+            recipient_email = creator_email
+            recipient_name = creator
+        else:
+            recipient_email = assignee_email
+            recipient_name = assignee
+
+    teams_direct_chat = generate_teams_chat_url(recipient_name, f"[Mission Control] แจ้งอัปเดตงาน {order_id}: {title} (สถานะ: {status})")
 
     payload = {
         "type": "message",
+        "recipient_email": recipient_email,
+        "recipient_name": str(recipient_name),
+        "creator_email": creator_email,
+        "assignee_email": assignee_email,
+        "creator": str(creator),
+        "assignee": str(assignee),
+        "order_id": str(order_id),
+        "title": str(title),
+        "status": str(status),
+        "summary": f"แจ้งเตือนคำสั่งงาน {order_id}: {title} ({status})",
+        "text": f"📢 **[Mission Control] {action_text}**\n\n- **รหัสงาน:** `{order_id}`\n- **ชื่องาน:** {title}\n- **คนสั่งงาน:** {creator} ({creator_email})\n- **ผู้ปฏิบัติงาน:** {assignee} ({assignee_email})\n- **กำหนดส่ง:** `{deadline}`\n- **สถานะล่าสุด:** **{status}**\n\n👉 [เปิดเข้าระบบ Mission Control]({app_url if app_url else 'https://streamlit.io'})",
         "attachments": [
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",

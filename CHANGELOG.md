@@ -19,6 +19,7 @@ This document adheres to the **FAANG Hybrid Two-Tier Standard**:
 | **INC-20261016-005** | 2026-10-16 02:14 | **P0 (Critical)** | State Machine & RBAC | Task could be closed while still in progress; Assignee could approve and close their own work. | Enforced strict State Machine & 4-Eyes Principle: only Creator can close once Assignee submits. | 🟢 Resolved |
 | **INC-20261016-006** | 2026-10-16 02:26 | **P0 (Critical)** | Session Termination | Clicking Logout in Incognito failed to log out due to server-side auto-restore race condition. | Added `is_logged_out` guard, client-side `history.replaceState` URL stripping, and cookie expiration. | 🟢 Resolved |
 | **INC-20261016-007** | 2026-10-16 02:58 | **P1 (High)** | Action Panel / Confirmation | Verbal order recorded on behalf of Creator (`รอคนสั่งยืนยัน`) lacked confirm button due to rigid `"รอยืนยัน"` check. | Expanded status check to `["รอยืนยัน", "รอคนสั่งยืนยัน", "รอคนรับผิดชอบตอบรับ"]` + added role-aware & Admin fallback confirmation. | 🟢 Resolved |
+| **INC-20261016-008** | 2026-10-16 03:25 | **P2 (Medium)** | Teams Webhook / Scalability | Static notification routing required changing Webhook keys whenever new members (e.g. Adam) onboarded. | Engineered Smart Counterparty Routing (`recipient_email`) for dynamic 1-on-1 Teams chat with zero key changes. | 🟢 Resolved |
 
 ---
 
@@ -230,3 +231,24 @@ if selected_row['status'] in ["รอยืนยัน", "รอคนสั่
 ```
 * **Guardrail**: If the current user is not authorized to confirm, a clear informational message explicitly states who the task is waiting for, eliminating user ambiguity.
 
+
+---
+
+### Incident ID: INC-20261016-008
+* **Date & Local Time**: 2026-10-16 03:25:00 (+07:00)
+* **Severity**: P2 (Architecture Scalability & Team Growth)
+* **Impacted Module**: `app.py::send_teams_notification()`
+
+#### 1. Symptom & Executive Impact
+If a Power Automate workflow hardcoded a single chat target (e.g. `Nataphon P.`), whenever a new team member (e.g. `Adam`) joined and assigned work to `Herren`, notifications either failed to reach the new member or required manual Webhook key alterations in `.streamlit/secrets.toml`.
+
+#### 2. Technical Root Cause (RCA)
+1. **Hardcoded Recipient Coupling**: The webhook payload lacked dynamic recipient targeting, making team growth dependent on manual Flow edits.
+2. **Asymmetric Notification Needs**: In a bilateral task workflow, the target recipient switches dynamically:
+   - When Assignee acts -> Alert Creator.
+   - When Creator acts -> Alert Assignee.
+
+#### 3. Architectural Remediation & Code Diff
+- **Smart Counterparty Routing**: Evaluates current active actor against ticket creator and assignee.
+- **Dynamic Payload Attributes**: Explicitly injects `recipient_email`, `recipient_name`, `creator_email`, and `assignee_email` at the root JSON payload, allowing Power Automate to use `Create a chat` with `recipient_email` without hardcoding conversation IDs.
+- **Single Perpetual Webhook**: Guarantees zero secret/key modifications across team growth.
